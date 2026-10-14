@@ -119,5 +119,5 @@ jobs:
           }
           check fail run "expected failure from fixture"
           check fail-win run "expected failure from fixture"
-          check fail-install install "npm ci"
-          test "$(ls reports | wc -l)" = 3
+          check fail-install install "npm error"
+          test "$(find reports -mindepth 1 -maxdepth 1 | wc -l)" = 3
