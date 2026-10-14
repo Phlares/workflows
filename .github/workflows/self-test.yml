@@ -31,8 +31,17 @@ jobs:
       name: js-sub
       node-version: "24"
       working-directory: fixtures/js-sub/app
+      # NODE_OPTIONS is the one variable the runner refuses in $GITHUB_ENV.
+      env: |
+        NODE_OPTIONS=--max-old-space-size=1234
+
+        # comment lines and blank lines are skipped
+        SPACED=a b  c
       install: npm ci
-      run: npm test
+      run: |
+        test "$NODE_OPTIONS" = "--max-old-space-size=1234"
+        test "$SPACED" = "a b  c"
+        npm test
 
   py-zig:
     uses: ./.github/workflows/check.yml
@@ -57,7 +66,9 @@ jobs:
       node-version: "24"
       working-directory: fixtures/fail
       install: npm ci
-      run: npm test
+      run: |
+        printf '\033[31mcoloured\033[0m\n'
+        npm test
 
   fail-win:
     uses: ./.github/workflows/check.yml
@@ -78,6 +89,15 @@ jobs:
       install: npm ci
       run: echo "never reached"
 
+  timeout:
+    uses: ./.github/workflows/check.yml
+    with:
+      name: timeout
+      timeout-minutes: 1
+      run: |
+        echo "started sleep"
+        sleep 300
+
   lint:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -94,7 +114,7 @@ jobs:
   # It is the one required check on main.
   verify:
     if: always()
-    needs: [js, js-sub, py-zig, fail, fail-win, fail-install, lint]
+    needs: [js, js-sub, py-zig, fail, fail-win, fail-install, timeout, lint]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -105,7 +125,7 @@ jobs:
             .js.result == "success" and ."js-sub".result == "success" and
             ."py-zig".result == "success" and .lint.result == "success" and
             .fail.result == "failure" and ."fail-win".result == "failure" and
-            ."fail-install".result == "failure"' <<<"$NEEDS"
+            ."fail-install".result == "failure" and .timeout.result == "failure"' <<<"$NEEDS"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: ci-failure-*
@@ -115,9 +135,12 @@ jobs:
             jq -e --arg job "$1" --arg step "$2" --arg text "$3" '
               .schema == 1 and .job == $job and .shard == 1 and .shard_total == 1 and
               .step == $step and (.run_url | startswith("https://github.com/")) and
-              (.sha | length == 40) and (.tail | any(contains($text)))' "reports/ci-failure-$1-1/report.json"
+              (.sha | length == 40) and (.tail | any(contains($text))) and
+              (.tail | all(contains("\u001b") | not))' "reports/ci-failure-$1-1/report.json"
           }
           check fail run "expected failure from fixture"
+          check fail run "coloured"
           check fail-win run "expected failure from fixture"
           check fail-install install "npm error"
-          test "$(find reports -mindepth 1 -maxdepth 1 | wc -l)" = 3
+          check timeout run "started sleep"
+          test "$(find reports -mindepth 1 -maxdepth 1 | wc -l)" = 4
