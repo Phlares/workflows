@@ -1,0 +1,138 @@
+name: check
+
+# Reusable check job. Callers decide what runs and when; this file decides
+# how: toolchains, install, shards, time limit, failure report. Inputs reach
+# bash through env:, never through ${{ }} inside a script, so caller text
+# with quotes or $ cannot inject expressions.
+on:
+  workflow_call:
+    inputs:
+      name: { type: string, default: check }
+      runs-on: { type: string, default: ubuntu-latest }
+      node-version: { type: string, default: "" }
+      python-version: { type: string, default: "" }
+      zig-version: { type: string, default: "" }
+      working-directory: { type: string, default: "." }
+      install: { type: string, default: "" }
+      run: { type: string, required: true }
+      env: { type: string, default: "" }
+      shards: { type: string, default: "[1]" }
+      timeout-minutes: { type: number, default: 15 }
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: ${{ inputs.name }} (${{ matrix.shard }})
+    runs-on: ${{ inputs.runs-on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(inputs.shards) }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      SHARD_INDEX: ${{ matrix.shard }}
+      SHARD_TOTAL: ${{ strategy.job-total }}
+      # Piped Python output is block-buffered; a killed test would lose its tail.
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: inputs.node-version != ''
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+      - if: inputs.python-version != ''
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ inputs.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            ${{ inputs.working-directory }}/pyproject.toml
+            ${{ inputs.working-directory }}/requirements*.txt
+      - if: inputs.zig-version != ''
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: ${{ inputs.zig-version }}
+      # Not $GITHUB_ENV: the runner refuses NODE_OPTIONS there.
+      - name: env
+        env:
+          INPUT_ENV: ${{ inputs.env }}
+        run: |
+          while IFS= read -r line || [ -n "$line" ]; do
+            line=${line%$'\r'}
+            case $line in
+              *[![:space:]]*) ;;
+              *) continue ;;
+            esac
+            case $line in
+              '#'*) ;;
+              [A-Za-z_]*=*) printf 'export %q\n' "$line" ;;
+              *) echo "env input: not KEY=VALUE: $line" | tee -a "$RUNNER_TEMP/run.log" >&2; exit 1 ;;
+            esac
+          done <<<"$INPUT_ENV" > "$RUNNER_TEMP/env.sh"
+      # Step-level limits: a job-level timeout cancels the job, and a
+      # cancelled job skips the failure report.
+      - name: install
+        if: inputs.install != ''
+        timeout-minutes: ${{ inputs.timeout-minutes }}
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          INPUT_INSTALL: ${{ inputs.install }}
+        run: |
+          echo install > "$RUNNER_TEMP/step"
+          . "$RUNNER_TEMP/env.sh"
+          bash -eo pipefail -c "$INPUT_INSTALL" 2>&1 | tee -a "$RUNNER_TEMP/run.log"
+      - name: run
+        timeout-minutes: ${{ inputs.timeout-minutes }}
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          INPUT_RUN: ${{ inputs.run }}
+        run: |
+          echo run > "$RUNNER_TEMP/step"
+          . "$RUNNER_TEMP/env.sh"
+          bash -eo pipefail -c "$INPUT_RUN" 2>&1 | tee -a "$RUNNER_TEMP/run.log"
+      # report.json schema 1 is read by the local CI-watch hook and the
+      # automated fix loop; change fields only with a schema bump.
+      - name: failure report
+        if: failure()
+        env:
+          NAME: ${{ inputs.name }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          cd "$RUNNER_TEMP"
+          touch run.log
+          step=$(cat step 2>/dev/null || echo setup)
+          # CI=true makes JS tools print colour codes; keep them out of the report.
+          sed -E 's/\x1b\[[0-9;?]*[A-Za-z]//g' run.log | tail -n 40 > tail.txt
+          last=$(grep -v '^[[:space:]]*$' tail.txt | tail -n 1)
+          last=${last//'%'/'%25'}
+          {
+            echo "### $NAME failed (shard $SHARD_INDEX/$SHARD_TOTAL, step: $step)"
+            echo '```'; cat tail.txt; echo '```'
+            echo "[Run log]($RUN_URL)"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::error title=$NAME (shard $SHARD_INDEX/$SHARD_TOTAL)::${last:-step $step failed}"
+          mkdir -p report
+          jq -n --arg repo "$GITHUB_REPOSITORY" --arg pr "$PR" --arg sha "$SHA" --arg url "$RUN_URL" \
+            --arg job "$NAME" --argjson shard "$SHARD_INDEX" --argjson total "$SHARD_TOTAL" \
+            --arg step "$step" --rawfile tail tail.txt \
+            '{schema: 1, repo: $repo, pr: (if $pr == "" then null else ($pr | tonumber) end),
+              sha: $sha, run_url: $url, job: $job, shard: $shard, shard_total: $total,
+              step: $step, tail: ($tail | split("\n") | map(sub("\r$"; "")) | map(select(. != "")))}' \
+            > report/report.json
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-failure-${{ inputs.name }}-${{ matrix.shard }}
+          path: ${{ runner.temp }}/report/report.json
+          if-no-files-found: ignore
+          overwrite: true
