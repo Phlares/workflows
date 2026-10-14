@@ -79,36 +79,6 @@ jobs:
         run: |
           echo run > "$RUNNER_TEMP/step"
           bash -eo pipefail -c "$INPUT_RUN" 2>&1 | tee -a "$RUNNER_TEMP/run.log"
-      # report.json schema 1 is read by the local CI-watch hook and the
-      # automated fix loop; change fields only with a schema bump.
-      - name: failure report
-        if: failure()
-        env:
-          NAME: ${{ inputs.name }}
-          PR: ${{ github.event.pull_request.number }}
-          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          cd "$RUNNER_TEMP"
-          touch run.log
-          step=$(cat step 2>/dev/null || echo setup)
-          tail -n 40 run.log > tail.txt
-          last=$(grep -v '^[[:space:]]*$' tail.txt | tail -n 1)
-          last=${last//'%'/'%25'}
-          {
-            echo "### $NAME failed (shard $SHARD_INDEX/$SHARD_TOTAL, step: $step)"
-            echo '```'; cat tail.txt; echo '```'
-            echo "[Run log]($RUN_URL)"
-          } >> "$GITHUB_STEP_SUMMARY"
-          echo "::error title=$NAME (shard $SHARD_INDEX/$SHARD_TOTAL)::${last:-step $step failed}"
-          mkdir -p report
-          jq -n --arg repo "$GITHUB_REPOSITORY" --arg pr "$PR" --arg sha "$SHA" --arg url "$RUN_URL" \
-            --arg job "$NAME" --argjson shard "$SHARD_INDEX" --argjson total "$SHARD_TOTAL" \
-            --arg step "$step" --rawfile tail tail.txt \
-            '{schema: 1, repo: $repo, pr: (if $pr == "" then null else ($pr | tonumber) end),
-              sha: $sha, run_url: $url, job: $job, shard: $shard, shard_total: $total,
-              step: $step, tail: ($tail | split("\n") | map(sub("\r$"; "")) | map(select(. != "")))}' \
-            > report/report.json
       - if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
