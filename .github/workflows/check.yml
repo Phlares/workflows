@@ -26,7 +26,6 @@ jobs:
   check:
     name: ${{ inputs.name }} (${{ matrix.shard }})
     runs-on: ${{ inputs.runs-on }}
-    timeout-minutes: ${{ inputs.timeout-minutes }}
     strategy:
       fail-fast: false
       matrix:
@@ -37,6 +36,8 @@ jobs:
     env:
       SHARD_INDEX: ${{ matrix.shard }}
       SHARD_TOTAL: ${{ strategy.job-total }}
+      # Piped Python output is block-buffered; a killed test would lose its tail.
+      PYTHONUNBUFFERED: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -59,25 +60,43 @@ jobs:
         uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
           version: ${{ inputs.zig-version }}
+      # Not $GITHUB_ENV: the runner refuses NODE_OPTIONS there.
       - name: env
-        if: inputs.env != ''
         env:
           INPUT_ENV: ${{ inputs.env }}
-        run: printf '%s\n' "$INPUT_ENV" >> "$GITHUB_ENV"
+        run: |
+          while IFS= read -r line || [ -n "$line" ]; do
+            line=${line%$'\r'}
+            case $line in
+              *[![:space:]]*) ;;
+              *) continue ;;
+            esac
+            case $line in
+              '#'*) ;;
+              [A-Za-z_]*=*) printf 'export %q\n' "$line" ;;
+              *) echo "env input: not KEY=VALUE: $line" | tee -a "$RUNNER_TEMP/run.log" >&2; exit 1 ;;
+            esac
+          done <<<"$INPUT_ENV" > "$RUNNER_TEMP/env.sh"
+      # Step-level limits: a job-level timeout cancels the job, and a
+      # cancelled job skips the failure report.
       - name: install
         if: inputs.install != ''
+        timeout-minutes: ${{ inputs.timeout-minutes }}
         working-directory: ${{ inputs.working-directory }}
         env:
           INPUT_INSTALL: ${{ inputs.install }}
         run: |
           echo install > "$RUNNER_TEMP/step"
+          . "$RUNNER_TEMP/env.sh"
           bash -eo pipefail -c "$INPUT_INSTALL" 2>&1 | tee -a "$RUNNER_TEMP/run.log"
       - name: run
+        timeout-minutes: ${{ inputs.timeout-minutes }}
         working-directory: ${{ inputs.working-directory }}
         env:
           INPUT_RUN: ${{ inputs.run }}
         run: |
           echo run > "$RUNNER_TEMP/step"
+          . "$RUNNER_TEMP/env.sh"
           bash -eo pipefail -c "$INPUT_RUN" 2>&1 | tee -a "$RUNNER_TEMP/run.log"
       # report.json schema 1 is read by the local CI-watch hook and the
       # automated fix loop; change fields only with a schema bump.
@@ -92,7 +111,8 @@ jobs:
           cd "$RUNNER_TEMP"
           touch run.log
           step=$(cat step 2>/dev/null || echo setup)
-          tail -n 40 run.log > tail.txt
+          # CI=true makes JS tools print colour codes; keep them out of the report.
+          sed -E 's/\x1b\[[0-9;?]*[A-Za-z]//g' run.log | tail -n 40 > tail.txt
           last=$(grep -v '^[[:space:]]*$' tail.txt | tail -n 1)
           last=${last//'%'/'%25'}
           {
@@ -115,3 +135,4 @@ jobs:
           name: ci-failure-${{ inputs.name }}-${{ matrix.shard }}
           path: ${{ runner.temp }}/report/report.json
           if-no-files-found: ignore
+          overwrite: true
