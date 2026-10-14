@@ -1,0 +1,123 @@
+name: self-test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: self-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  js:
+    uses: ./.github/workflows/check.yml
+    with:
+      name: js
+      node-version: "24"
+      working-directory: fixtures/js
+      install: npm ci
+      run: |
+        test "$SHARD_TOTAL" = 2
+        node --test --test-shard="$SHARD_INDEX/$SHARD_TOTAL"
+      shards: "[1,2]"
+
+  js-sub:
+    uses: ./.github/workflows/check.yml
+    with:
+      name: js-sub
+      node-version: "24"
+      working-directory: fixtures/js-sub/app
+      install: npm ci
+      run: npm test
+
+  py-zig:
+    uses: ./.github/workflows/check.yml
+    with:
+      name: py-zig
+      runs-on: windows-latest
+      python-version: "3.12"
+      zig-version: 0.16.0
+      working-directory: fixtures/py-zig
+      env: FIXTURE_ENV=ok
+      install: pip install -r requirements.txt
+      run: |
+        test "$FIXTURE_ENV" = "ok"
+        mkdir -p zig-out
+        zig build-exe hello.zig -femit-bin=zig-out/hello.exe
+        pytest -q -m "not slow and not audio_hw"
+
+  fail:
+    uses: ./.github/workflows/check.yml
+    with:
+      name: fail
+      node-version: "24"
+      working-directory: fixtures/fail
+      install: npm ci
+      run: npm test
+
+  fail-win:
+    uses: ./.github/workflows/check.yml
+    with:
+      name: fail-win
+      runs-on: windows-latest
+      node-version: "24"
+      working-directory: fixtures/fail
+      install: npm ci
+      run: npm test
+
+  fail-install:
+    uses: ./.github/workflows/check.yml
+    with:
+      name: fail-install
+      node-version: "24"
+      working-directory: fixtures/fail-install
+      install: npm ci
+      run: echo "never reached"
+
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: |
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/914e7df21a07ef503a81201c76d2b11c789d3fca/scripts/download-actionlint.bash) 1.7.12
+          ./actionlint -color
+
+  # GitHub cannot mark a reusable-workflow job "expected to fail", so this job
+  # checks that the fail cases failed and that their reports are well formed.
+  # It is the one required check on main.
+  verify:
+    if: always()
+    needs: [js, js-sub, py-zig, fail, fail-win, fail-install, lint]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          jq -e '
+            .js.result == "success" and ."js-sub".result == "success" and
+            ."py-zig".result == "success" and .lint.result == "success" and
+            .fail.result == "failure" and ."fail-win".result == "failure" and
+            ."fail-install".result == "failure"' <<<"$NEEDS"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: ci-failure-*
+          path: reports
+      - run: |
+          check() { # $1 artifact job name, $2 expected step, $3 text expected in tail
+            jq -e --arg job "$1" --arg step "$2" --arg text "$3" '
+              .schema == 1 and .job == $job and .shard == 1 and .shard_total == 1 and
+              .step == $step and (.run_url | startswith("https://github.com/")) and
+              (.sha | length == 40) and (.tail | any(contains($text)))' "reports/ci-failure-$1-1/report.json"
+          }
+          check fail run "expected failure from fixture"
+          check fail-win run "expected failure from fixture"
+          check fail-install install "npm ci"
+          test "$(ls reports | wc -l)" = 3
