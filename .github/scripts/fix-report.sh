@@ -23,6 +23,9 @@ body=$head
 body+=$'\n\n'"[Run log]($RUN_URL)"
 "$GH" api "repos/$REPO/issues/$NUMBER/comments" -f body="$body" --silent
 if [ -s "${EXEC_FILE:-}" ]; then
-  jq -r '[.[] | select(.type == "result")][-1] | "claude-fix: \(.num_turns) turns, \(.duration_ms / 1000 | floor) s"' \
+  jq -r '[.[] | select(.type == "result")][-1]
+    | (.permission_denials // [] | map(.tool_name) | unique | join(", ")) as $tools
+    | "claude-fix: \(.num_turns) turns, \(.duration_ms / 1000 | floor) s, \(.permission_denials // [] | length) denied tool calls"
+      + (if $tools == "" then "" else " (\($tools))" end)' \
     "$EXEC_FILE" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
 fi

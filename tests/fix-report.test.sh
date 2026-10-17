@@ -22,7 +22,11 @@ report RESULT='{"fixed":true,"summary":"Restored the clamp."}'
 check "published: names the fix" said "Fix pushed: https://github.com/o/r/pull/9"
 check "published: carries the summary" said "Restored the clamp."
 check "published: links the run" said "[Run log](https://github.com/o/r/actions/runs/1)"
-check "turns in the job summary" grep -qx "claude-fix: 12 turns, 61 s" "$GITHUB_STEP_SUMMARY"
+check "turns in the job summary" grep -qx "claude-fix: 12 turns, 61 s, 0 denied tool calls" "$GITHUB_STEP_SUMMARY"
+
+printf '[{"type":"result","num_turns":3,"duration_ms":2000,"permission_denials":[{"tool_name":"Write"},{"tool_name":"Read"},{"tool_name":"Write"}]}]' > "$tmp/denied.json"
+report EXEC_FILE="$tmp/denied.json"
+check "denied tool calls in the job summary" grep -qx "claude-fix: 3 turns, 2 s, 3 denied tool calls (Read, Write)" "$GITHUB_STEP_SUMMARY"
 mv "$FIX_DIR/published" "$tmp/published.old"
 
 report RESULT='{"fixed":false,"summary":"Flaky network test; no code fault."}'
