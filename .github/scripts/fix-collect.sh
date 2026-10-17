@@ -9,6 +9,7 @@ repo=$1 out=$2
 shift 2
 mkdir -p "$out"
 for run in "$@"; do
+  [ -n "$run" ] || continue
   arts=$("$GH" api "repos/$repo/actions/runs/$run/artifacts?per_page=100" --jq '.artifacts[] | "\(.name)\t\(.id)"')
   jobs=$("$GH" api "repos/$repo/actions/runs/$run/jobs?per_page=100" --jq '.jobs[] | select(.conclusion == "failure") | "\(.id)\t\(.name)"')
   while IFS=$'\t' read -r id name; do

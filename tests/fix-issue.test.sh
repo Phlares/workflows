@@ -19,6 +19,14 @@ check "multi-line and repeated comments are removed" grep -qx 'a  b  c' <<<"$out
 run '{"title":"t","body":"<!-- never closed\nhidden tail"}'
 check "an unclosed comment hides nothing" lacks "hidden tail"
 
+run '{"title":"t","body":"a\n[//]: # (hidden one)\n   [x]: <> \"hidden two\"\nb [k]: shown"}'
+check "link reference lines are removed" lacks hidden
+check "text around them is kept" grep -qx a <<<"$out"
+check "a reference-like text mid-line is kept" grep -qxF 'b [k]: shown' <<<"$out"
+
+run '{"title":"t","body":"in​vis⁠ible󠁁󠁿text"}'
+check "zero-width and tag characters are removed" grep -qx 'invisibletext' <<<"$out"
+
 run '{"title":"t","body":null}'
 check "empty body" test "$out" = "# t"
 finish

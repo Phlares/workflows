@@ -25,4 +25,8 @@ check "job with a report: its log is not fetched" bash -c "! grep -q 'jobs/2/log
 reset_gh
 bash "$script" o/r "$tmp/none"; code=$?
 check "no run ids: empty folder" test "$code" -eq 0 -a -d "$tmp/none" -a -z "$(ls -A "$tmp/none")"
+
+reset_gh
+bash "$script" o/r "$tmp/blank" ""; code=$?
+check "an empty run id is skipped" test "$code" -eq 0 -a ! -s "$FAKE_GH_LOG"
 finish

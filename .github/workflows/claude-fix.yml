@@ -53,15 +53,19 @@ jobs:
             /.github/actions/
             /.github/scripts/
           sparse-checkout-cone-mode: false
+      # Claude can write anywhere in the workspace, so every step that runs
+      # after it uses this read-only copy, outside the workspace.
       - run: |
           echo /.wf/ >> .git/info/exclude
-          mkdir -p "$RUNNER_TEMP/fix/task"
+          mkdir -p "$RUNNER_TEMP/fix/task" "$RUNNER_TEMP/fix/bin"
+          install -m 555 .wf/.github/scripts/*.sh "$RUNNER_TEMP/fix/bin/"
+          chmod 555 "$RUNNER_TEMP/fix/bin"
           echo "FIX_DIR=$RUNNER_TEMP/fix" >> "$GITHUB_ENV"
       - id: target
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
-        run: bash .wf/.github/scripts/fix-target.sh "$EVENT_NAME" "$GITHUB_EVENT_PATH" | tee -a "$GITHUB_OUTPUT"
+        run: bash "$FIX_DIR/bin/fix-target.sh" "$EVENT_NAME" "$GITHUB_EVENT_PATH" | tee -a "$GITHUB_OUTPUT"
       # Claim. Labels set with GITHUB_TOKEN start no workflows, so this cannot loop.
       - id: claim
         if: steps.target.outputs.skip == ''
@@ -108,14 +112,14 @@ jobs:
           SHA: ${{ steps.target.outputs.sha }}
         run: |
           if [ "$KIND" = issue ]; then
-            bash .wf/.github/scripts/fix-issue.sh "$GITHUB_EVENT_PATH" > "$FIX_DIR/task/issue.md"
+            bash "$FIX_DIR/bin/fix-issue.sh" "$GITHUB_EVENT_PATH" > "$FIX_DIR/task/issue.md"
             exit 0
           fi
           # A failed claude-fix run on the same commit is not CI.
           ids=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$SHA&status=failure&per_page=100" \
             --jq '.workflow_runs[] | select(.name != "claude-fix") | .id')
           mapfile -t ids <<<"$ids"
-          bash .wf/.github/scripts/fix-collect.sh "$GITHUB_REPOSITORY" "$FIX_DIR/task" "${ids[@]}"
+          bash "$FIX_DIR/bin/fix-collect.sh" "$GITHUB_REPOSITORY" "$FIX_DIR/task" "${ids[@]}"
           if [ -z "$(find "$FIX_DIR/task" -name report.json -o -name 'log-*.txt')" ]; then echo empty=true >> "$GITHUB_OUTPUT"; fi
       - id: args
         if: steps.target.outputs.skip == '' && steps.collect.outputs.empty != 'true'
@@ -128,7 +132,6 @@ jobs:
           MAX_TURNS: ${{ inputs.max-turns }}
           TEST_COMMAND: ${{ inputs.test-command }}
         run: |
-          install -D -m 555 .wf/.github/scripts/fix-publish.sh "$FIX_DIR/bin/fix-publish.sh"
           printf 'FIX_REPO=%q\nFIX_REMOTE=%q\nFIX_KIND=%q\nFIX_NUMBER=%q\nFIX_BRANCH=%q\nFIX_BASE=%q\nFIX_START=%q\n' \
             "$GITHUB_WORKSPACE" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "$KIND" "$NUMBER" "$BRANCH" "$BASE" "$(git rev-parse HEAD)" > "$FIX_DIR/publish.env"
           # Read-only and outside --add-dir: issue runs cannot retarget the push.
@@ -142,6 +145,7 @@ jobs:
             echo "claude-args=--model $(q "$MODEL") --max-turns $MAX_TURNS --add-dir $(q "$FIX_DIR/task") --allowedTools $(q "$tools") --disallowedTools WebFetch,WebSearch --json-schema $(q "$schema")"
             echo "settings=$(jq -c '{env: .}' "$RUNNER_TEMP/env.json" 2>/dev/null || echo '{}')"
           } >> "$GITHUB_OUTPUT"
+          mv .wf "$RUNNER_TEMP/wf"
       - id: fix
         if: steps.args.outcome == 'success'
         timeout-minutes: ${{ inputs.timeout-minutes }}
@@ -166,8 +170,15 @@ jobs:
                Do not run git commit or git push yourself.
             4. If no clear fix exists, do not publish. A wrong fix costs more than a note.
             5. Finish with the structured output: fixed (true only if you published) and summary (what failed, what you changed or found; at most 10 short lines).
+      # Nothing after the fix step may run code from the workspace. Without
+      # .git, the checkout post step skips its git cleanup too.
+      - name: seal
+        if: always() && steps.args.outcome == 'success'
+        working-directory: ${{ runner.temp }}
+        run: mv "$GITHUB_WORKSPACE/.git" "$RUNNER_TEMP/caller-git"
       - name: report
         if: always() && steps.target.outputs.number != ''
+        working-directory: ${{ runner.temp }}
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -179,9 +190,10 @@ jobs:
           OUTCOME: ${{ steps.fix.outcome }}
           RESULT: ${{ steps.fix.outputs.structured_output }}
           EXEC_FILE: ${{ steps.fix.outputs.execution_file }}
-        run: bash .wf/.github/scripts/fix-report.sh
+        run: bash "$FIX_DIR/bin/fix-report.sh"
       - name: release
         if: always() && steps.target.outputs.number != ''
+        working-directory: ${{ runner.temp }}
         env:
           GH_TOKEN: ${{ github.token }}
           NUMBER: ${{ steps.target.outputs.number }}

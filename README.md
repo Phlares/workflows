@@ -139,11 +139,13 @@ Rules:
   It skips non-PR runs, forks, PRs with an `owner:*` label, commits pushed
   by `claude[bot]`, and commits it already tried (status `claude-fix/auto`).
 - Issue runs take only issues written by collaborators (`OWNER`, `MEMBER`,
-  `COLLABORATOR`). Other issues get a "Not run" comment. HTML comments in the
-  issue body are removed before Claude reads it: they do not render, so the
-  person who added the label never saw them.
+  `COLLABORATOR`). Other issues get a "Not run" comment. Text GitHub does not
+  render (HTML comments, link reference lines, zero-width characters) is
+  removed before Claude reads the issue: the person who added the label never
+  saw it.
 - A run never changes `.github/`. The publish step also refuses unknown
-  `.git/config` keys and an `origin` that is not this repo.
+  `.git/config` keys and an `origin` that is not this repo, and leaves out
+  `CLAUDE.md`, `.claude/` and the other files the action resets on PR runs.
 - Cloud hand-off: run `/autofix-pr` on the PR branch, then
   `gh pr edit <n> --add-label owner:cloud --remove-label owner:local`.
 

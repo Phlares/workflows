@@ -10,7 +10,9 @@ dir=$(cd "$(dirname "$0")/.." && pwd)
 . "$dir/publish.env"
 die() { echo "fix-publish: $1" >&2; exit 1; }
 # Claude can write files under .git/: never run its hooks or fsmonitor.
-git() { command git -c core.hooksPath=/dev/null -c core.fsmonitor=false "$@"; }
+# Exported, so git run by gh inherits it too.
+export GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null \
+  GIT_CONFIG_KEY_1=core.fsmonitor GIT_CONFIG_VALUE_1=false
 [ -n "${1:-}" ] || die 'usage: fix-publish.sh "<commit subject>"'
 [ ! -e "$dir/published" ] || die "already published: $(cat "$dir/published")"
 cd "$FIX_REPO"
@@ -24,7 +26,9 @@ bad=$(git config --local --includes --name-only --list | grep -viE "$allowed" ||
 # origin carries the token: it must still point at this repo.
 url=$(git remote get-url --push origin | sed -E 's#//[^/@]*@#//#; s#\.git$##')
 [ "$url" = "$FIX_REMOTE" ] || die "refused: origin points at $url, not $FIX_REMOTE"
-git add -A
+# claude-code-action resets these to the base branch, unstaged, on PR events.
+git add -A -- . ':!.claude' ':!.mcp.json' ':!.claude.json' ':!.gitmodules' ':!.ripgreprc' \
+  ':!CLAUDE.md' ':!CLAUDE.local.md' ':!.husky'
 git diff --cached --quiet || git commit -q -m "$1"
 ! git diff --quiet "$FIX_START" HEAD || die "no changes to publish"
 git diff --quiet "$FIX_START" HEAD -- .github || die "refused: the change touches .github/"
