@@ -43,6 +43,22 @@ jobs:
         test "$SPACED" = "a b  c"
         npm test
 
+  # Both workflows fetch this repo into .wf/ at the called commit. Callers'
+  # test and lint globs must not see fixtures, and git status stays clean.
+  setup-composite:
+    uses: ./.github/workflows/check.yml
+    with:
+      name: setup-composite
+      node-version: "24"
+      env: COMPOSITE=ok
+      run: |
+        test "$COMPOSITE" = ok
+        test "$(jq -r .COMPOSITE "$RUNNER_TEMP/env.json")" = ok
+        test "$(git -C .wf rev-parse HEAD)" = "$GITHUB_SHA"
+        test -f .wf/.github/actions/setup/action.yml
+        test -z "$(find .wf -path .wf/.git -prune -o -type f -print | grep -vE '^\.wf/\.github/(actions|scripts)/')"
+        test -z "$(git status --porcelain)"
+
   py-zig:
     uses: ./.github/workflows/check.yml
     with:
@@ -114,7 +130,7 @@ jobs:
   # It is the one required check on main.
   verify:
     if: always()
-    needs: [js, js-sub, py-zig, fail, fail-win, fail-install, timeout, lint]
+    needs: [js, js-sub, setup-composite, py-zig, fail, fail-win, fail-install, timeout, lint]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -122,7 +138,7 @@ jobs:
           NEEDS: ${{ toJSON(needs) }}
         run: |
           jq -e '
-            .js.result == "success" and ."js-sub".result == "success" and
+            .js.result == "success" and ."js-sub".result == "success" and ."setup-composite".result == "success" and
             ."py-zig".result == "success" and .lint.result == "success" and
             .fail.result == "failure" and ."fail-win".result == "failure" and
             ."fail-install".result == "failure" and .timeout.result == "failure"' <<<"$NEEDS"
