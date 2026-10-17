@@ -1,0 +1,6 @@
+# actionlint 1.7.12 does not know job.workflow_sha (the called workflow's
+# commit, documented in the GitHub contexts reference).
+paths:
+  .github/workflows/**/*.yml:
+    ignore:
+      - 'property "workflow_sha" is not defined'
