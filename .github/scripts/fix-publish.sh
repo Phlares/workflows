@@ -10,8 +10,10 @@ dir=$(cd "$(dirname "$0")/.." && pwd)
 . "$dir/publish.env"
 die() { echo "fix-publish: $1" >&2; exit 1; }
 # Claude can write files under .git/: never run its hooks or fsmonitor.
-# Exported, so git run by gh inherits it too.
-export GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null \
+# Exported, so git run by gh inherits it too. Global and system config are
+# skipped: Claude could write ~/.gitconfig, and only the local file is checked.
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+  GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null \
   GIT_CONFIG_KEY_1=core.fsmonitor GIT_CONFIG_VALUE_1=false
 [ -n "${1:-}" ] || die 'usage: fix-publish.sh "<commit subject>"'
 [ ! -e "$dir/published" ] || die "already published: $(cat "$dir/published")"

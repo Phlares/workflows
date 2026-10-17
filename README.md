@@ -143,7 +143,8 @@ Rules:
   render (HTML comments, link reference lines, zero-width characters) is
   removed before Claude reads the issue: the person who added the label never
   saw it.
-- A run never changes `.github/`. The publish step also refuses unknown
+- Claude edits only inside the repo folder and reads only the repo and its
+  task files. A run never changes `.github/`. The publish step also refuses unknown
   `.git/config` keys and an `origin` that is not this repo, and leaves out
   `CLAUDE.md`, `.claude/` and the other files the action resets on PR runs.
 - Cloud hand-off: run `/autofix-pr` on the PR branch, then

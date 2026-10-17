@@ -27,6 +27,9 @@ check "a reference-like text mid-line is kept" grep -qxF 'b [k]: shown' <<<"$out
 run '{"title":"t","body":"in​vis⁠ible󠁁󠁿text"}'
 check "zero-width and tag characters are removed" grep -qx 'invisibletext' <<<"$out"
 
+run '{"title":"t","body":"a‮b⁦c­d"}'
+check "bidi controls and soft hyphens are removed" grep -qx 'abcd' <<<"$out"
+
 run '{"title":"t","body":null}'
 check "empty body" test "$out" = "# t"
 finish

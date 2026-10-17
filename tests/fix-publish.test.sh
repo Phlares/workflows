@@ -80,6 +80,11 @@ chmod +x "$d/gh-runs-git"
 GH="$d/gh-runs-git" pub "fix: thing"
 check "git run by gh also skips hooks" test "$code" -eq 0 -a ! -e "$d/hook-ran"
 
+setup pr feat; echo b > a.txt; echo '* filter=x' > .gitattributes; mkdir -p "$d/home/.config/git"
+printf '[filter "x"]\n\tclean = touch %s/global-ran; cat\n' "$d" | tee "$d/home/.gitconfig" > "$d/home/.config/git/config"
+HOME="$d/home" XDG_CONFIG_HOME="$d/home/.config" pub "fix: thing"
+check "global git config is ignored" test "$code" -eq 0 -a ! -e "$d/global-ran"
+
 setup pr feat
 pub "fix: thing"
 check "no change: refused" test "$code" -ne 0 -a ! -e "$d/fix/published"
