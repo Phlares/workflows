@@ -78,7 +78,7 @@ The spec's Rollout step 2. Nothing else ships until this passes.
 - [ ] **Step 1: Owner prerequisites (one message, wait for all).** Ask the owner to:
   1. Approve creating private repo `Phlares/claude-fix-sandbox` (throwaway; listed for deletion at the end).
   2. Install the Claude GitHub App (https://github.com/apps/claude) on `claude-fix-sandbox`, `portfolio`, `flashback-sampler`, `VoxGarbler`.
-  3. Run `claude setup-token`, then in this session: `! gh secret set CLAUDE_CODE_OAUTH_TOKEN -R Phlares/claude-fix-sandbox` (paste the token at the prompt). The token never goes through chat.
+  3. Run `claude setup-token`, then in their own terminal (not `!`: it has no stdin and stores a blank secret): `gh secret set CLAUDE_CODE_OAUTH_TOKEN -R Phlares/claude-fix-sandbox`, pasting the token at the prompt. Same for portfolio, flashback-sampler and VoxGarbler. The token never goes through chat.
 
 - [ ] **Step 2: Probe workflow on a spike branch**
 
@@ -1176,7 +1176,7 @@ Check the `main` push run: `verify` green. Ledger: `Task 8: complete (merge <sha
 - Consumes: `V11_SHA` (Task 8).
 - Produces: the pilot table and the owner's model choice, consumed by Task 11 and, if the choice is not `opus`, a v1.1.1 default change.
 
-- [ ] **Step 1: Owner confirmation (one message, wait).** Cost: 8 fix runs plus 1 issue run of subscription usage, and about 8 × (CI on the seed + about 15 min fix job + CI on the fix) of private-repo runner minutes. Ask the owner to: confirm the pilot; set the secret with `! gh secret set CLAUDE_CODE_OAUTH_TOKEN -R Phlares/portfolio`; read `/usage` now and post the number.
+- [ ] **Step 1: Owner confirmation (one message, wait).** Cost: 8 fix runs plus 1 issue run of subscription usage, and about 8 × (CI on the seed + about 15 min fix job + CI on the fix) of private-repo runner minutes. Ask the owner to: confirm the pilot; read `/usage` now and post the number.
 
 - [ ] **Step 2: Labels**
 
@@ -1477,7 +1477,7 @@ rm -- "$file"
 **Interfaces:**
 - Consumes: the release hash (`V11_SHA`, or the v1.1.1 hash from Task 9) and the owner's model pick.
 
-- [ ] **Step 1: Owner prerequisites.** Secrets: `! gh secret set CLAUDE_CODE_OAUTH_TOKEN -R Phlares/flashback-sampler` and `-R Phlares/VoxGarbler`. Branch protection exists on flashback `dev`/`main` and VoxGarbler `master` (done 2026-10-16); confirm with `gh api repos/<r>/rules/branches/<b>`.
+- [ ] **Step 1: Owner prerequisites.** Secrets exist (set in Task 1; check with `gh secret list -R <repo>`). Branch protection exists on flashback `dev`/`main` and VoxGarbler `master` (done 2026-10-16); confirm with `gh api repos/<r>/rules/branches/<b>`.
 
 - [ ] **Step 2: Labels** in both repos: the four `gh label create` lines from Task 9 Step 2 (no variable).
 
