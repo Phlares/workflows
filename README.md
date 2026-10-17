@@ -150,6 +150,9 @@ Rules:
   render (HTML comments, link reference lines, zero-width characters) is
   removed before Claude reads the issue: the person who added the label never
   saw it.
+- On PR runs, files Claude Code reads at start-up (`.claude/`, `.mcp.json`,
+  `CLAUDE.md` and the rest of `fix-paths.sh`) are reset to the default branch
+  copies first, on auto runs too: a PR cannot plant a hook.
 - Claude edits only inside the repo folder and reads only the repo and its
   task files. A run never changes `.github/`. The publish step also refuses unknown
   `.git/config` keys and an `origin` that is not this repo, and leaves out

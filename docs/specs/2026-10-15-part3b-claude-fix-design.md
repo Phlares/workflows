@@ -198,6 +198,7 @@ A full `claude-fix` run is tested in the pilot, not in self-test, because it spe
 | Risk | Mitigation |
 |---|---|
 | OIDC token exchange fails inside a cross-repo reusable workflow | Rollout step 2 tests it first |
+| Hooks or MCP servers planted in a PR (`.claude/`, `.mcp.json`) | `fix-reset-config.sh` restores the default branch copies before setup and before Claude starts, on label and auto runs. The action does this only on `pull_request` events. |
 | Prompt injection through issue text | F17 author gate and comment strip; F13 tools (no code runs in issue runs); F14 enforced in `fix-publish.sh`; draft PRs; branch protection |
 | CI and Vercel run Claude-written code with repo secrets before review | Accepted for collaborator-authored issues and PR runs (trusted input). Untrusted input waits for F18. |
 | Claude reads the App token from `.git/config` | Issue runs have no network tool and no shell; the token is revoked when the fix step ends |

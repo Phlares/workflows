@@ -8,6 +8,8 @@ GH=${GH:-gh}
 dir=$(cd "$(dirname "$0")/.." && pwd)
 # shellcheck source=/dev/null
 . "$dir/publish.env"
+# shellcheck source=fix-paths.sh
+. "$(dirname "$0")/fix-paths.sh"
 die() { echo "fix-publish: $1" >&2; exit 1; }
 # Claude can write files under .git/: never run its hooks or fsmonitor.
 # Exported, so git run by gh inherits it too. Global and system config are
@@ -28,9 +30,9 @@ bad=$(git config --local --includes --name-only --list | grep -viE "$allowed" ||
 # origin carries the token: it must still point at this repo.
 url=$(git remote get-url --push origin | sed -E 's#//[^/@]*@#//#; s#\.git$##')
 [ "$url" = "$FIX_REMOTE" ] || die "refused: origin points at $url, not $FIX_REMOTE"
-# claude-code-action resets these to the base branch, unstaged, on PR events.
-git add -A -- . ':!.claude' ':!.mcp.json' ':!.claude.json' ':!.gitmodules' ':!.ripgreprc' \
-  ':!CLAUDE.md' ':!CLAUDE.local.md' ':!.husky'
+# fix-reset-config.sh (and claude-code-action on PR events) resets these in
+# the work tree only.
+git add -A -- . "${CONFIG_PATHS[@]/#/:!}"
 git diff --cached --quiet || git commit -q -m "$1"
 ! git diff --quiet "$FIX_START" HEAD || die "no changes to publish"
 git diff --quiet "$FIX_START" HEAD -- .github || die "refused: the change touches .github/"

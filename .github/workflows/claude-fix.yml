@@ -78,6 +78,12 @@ jobs:
             gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/$NUMBER/labels/$l" --silent 2>/dev/null || true
           done
           gh api "repos/$GITHUB_REPOSITORY/issues/$NUMBER/labels" -f "labels[]=owner:action" --silent
+      - name: reset config
+        if: steps.target.outputs.kind == 'pr'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ github.event.repository.default_branch }}
+        run: bash "$FIX_DIR/bin/fix-reset-config.sh" "$BASE"
       # Code runs only when exec is true (fix-target.sh says when): a run that
       # could write a file and then run it would run injected code with the
       # App token.
