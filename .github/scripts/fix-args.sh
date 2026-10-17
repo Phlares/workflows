@@ -14,7 +14,14 @@ if [ "$KIND" = pr ]; then
   tools+=",Bash"
   [ -z "$TEST_COMMAND" ] || tools+=",Bash($TEST_COMMAND:*)"
 fi
+# Writes outside the workspace already need approval, which -p refuses.
+# These name the places later steps execute from: runner temp and _actions/
+# _tool beside the workspace, the tool cache, home dotfiles.
+work=$(dirname "$(dirname "$GITHUB_WORKSPACE")")
 deny="WebFetch,WebSearch"
-for tool in Edit Write; do deny+=",$tool(/$RUNNER_TEMP/**),$tool(~/.*),$tool(~/.*/**)"; done
+for tool in Edit Write; do
+  deny+=",$tool(/$RUNNER_TEMP/**),$tool(/$work/_*/**),$tool(~/.*),$tool(~/.*/**)"
+  [ -z "${RUNNER_TOOL_CACHE:-}" ] || deny+=",$tool(/$RUNNER_TOOL_CACHE/**)"
+done
 schema='{"type":"object","properties":{"fixed":{"type":"boolean"},"summary":{"type":"string"}},"required":["fixed","summary"]}'
 echo "--model $(q "$MODEL") --max-turns $MAX_TURNS --add-dir $(q "$FIX_DIR/task") --allowedTools $(q "$tools") --disallowedTools $(q "$deny") --json-schema $(q "$schema")"

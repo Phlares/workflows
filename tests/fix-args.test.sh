@@ -2,7 +2,8 @@
 # shellcheck source=lib.sh
 . "$(dirname "$0")/lib.sh"
 script="$root/.github/scripts/fix-args.sh"
-export HOME=/home/runner GITHUB_WORKSPACE=/home/runner/work/r/r RUNNER_TEMP=/home/runner/work/_temp
+export HOME=/home/runner GITHUB_WORKSPACE=/home/runner/work/r/r RUNNER_TEMP=/home/runner/work/_temp \
+  RUNNER_TOOL_CACHE=/opt/hostedtoolcache
 export FIX_DIR=$RUNNER_TEMP/fix MODEL=opus MAX_TURNS=50
 args=()
 run() { # $1 kind, $2 test command; sets args (the parsed argument list)
@@ -39,7 +40,9 @@ for p in "$GITHUB_WORKSPACE/src/a.js" "$GITHUB_WORKSPACE/test/a.test.js"; do
   check "issue: deny leaves $p editable" uncovered "$deny" "$p"
 done
 for p in "$HOME/.gitconfig" "$HOME/.config/git/config" "$HOME/.bashrc" \
-  "$RUNNER_TEMP/_runner_file_commands/set_env_1" "$FIX_DIR/bin/fix-publish.sh"; do
+  "$RUNNER_TEMP/_runner_file_commands/set_env_1" "$FIX_DIR/bin/fix-publish.sh" \
+  /home/runner/work/_actions/anthropics/claude-code-action/v1/src/post.ts \
+  /home/runner/work/_tool/node/24/x64/bin/node "$RUNNER_TOOL_CACHE/node/24/x64/bin/node"; do
   check "issue: deny covers $p" covers "$deny" "$p"
 done
 check "issue: may publish" has "$allow" "Bash(bash $FIX_DIR/bin/fix-publish.sh:*)"
