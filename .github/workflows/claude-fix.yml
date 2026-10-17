@@ -55,6 +55,7 @@ jobs:
           sparse-checkout-cone-mode: false
       - run: |
           echo /.wf/ >> .git/info/exclude
+          mkdir -p "$RUNNER_TEMP/fix/task"
           echo "FIX_DIR=$RUNNER_TEMP/fix" >> "$GITHUB_ENV"
       - id: target
         env:
@@ -95,7 +96,6 @@ jobs:
         env:
           INPUT_INSTALL: ${{ inputs.install }}
         run: |
-          mkdir -p "$FIX_DIR/task"
           . "$RUNNER_TEMP/env.sh"
           bash -eo pipefail -c "$INPUT_INSTALL" 2>&1 | tee "$FIX_DIR/task/install.log"
       - id: collect
@@ -105,7 +105,6 @@ jobs:
           KIND: ${{ steps.target.outputs.kind }}
           SHA: ${{ steps.target.outputs.sha }}
         run: |
-          mkdir -p "$FIX_DIR/task"
           if [ "$KIND" = issue ]; then
             jq -r '"# " + .issue.title + "\n\n" + (.issue.body // "")' "$GITHUB_EVENT_PATH" > "$FIX_DIR/task/issue.md"
             exit 0
@@ -126,8 +125,7 @@ jobs:
           MAX_TURNS: ${{ inputs.max-turns }}
           TEST_COMMAND: ${{ inputs.test-command }}
         run: |
-          mkdir -p "$FIX_DIR/bin"
-          install -m 555 .wf/.github/scripts/fix-publish.sh "$FIX_DIR/bin/fix-publish.sh"
+          install -D -m 555 .wf/.github/scripts/fix-publish.sh "$FIX_DIR/bin/fix-publish.sh"
           printf 'FIX_REPO=%q\nFIX_KIND=%q\nFIX_NUMBER=%q\nFIX_BRANCH=%q\nFIX_BASE=%q\nFIX_START=%q\n' \
             "$GITHUB_WORKSPACE" "$KIND" "$NUMBER" "$BRANCH" "$BASE" "$(git rev-parse HEAD)" > "$FIX_DIR/publish.env"
           # Read-only and outside --add-dir: issue runs cannot retarget the push.
