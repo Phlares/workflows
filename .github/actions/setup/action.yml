@@ -48,5 +48,5 @@ runs:
           esac
         done <<<"$INPUT_ENV"
         for l in "${lines[@]}"; do printf 'export %q\n' "$l"; done > "$RUNNER_TEMP/env.sh"
-        true || jq -n '$ARGS.positional | map(index("=") as $i | {key: .[:$i], value: .[$i + 1:]}) | from_entries' \
+        jq -n '$ARGS.positional | map(index("=") as $i | {key: .[:$i], value: .[$i + 1:]}) | from_entries' \
           --args "${lines[@]}" > "$RUNNER_TEMP/env.json"
