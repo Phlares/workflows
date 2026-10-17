@@ -49,7 +49,6 @@ jobs:
     uses: ./.github/workflows/check.yml
     with:
       name: setup-composite
-      node-version: "24"
       env: COMPOSITE=ok
       run: |
         test "$COMPOSITE" = ok
