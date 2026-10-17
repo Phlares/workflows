@@ -166,13 +166,15 @@ jobs:
             4. If no clear fix exists, do not publish. A wrong fix costs more than a note.
             5. Finish with the structured output: fixed (true only if you published) and summary (what failed, what you changed or found; at most 10 short lines).
       # Nothing after the fix step may run code from the workspace. Without
-      # .git, the checkout post step skips its git cleanup too.
+      # .git, the checkout post step skips its git cleanup. The untouched .wf
+      # goes back: the setup action's post steps re-read its action.yml.
       - name: seal
         if: always() && steps.args.outcome == 'success'
         working-directory: ${{ runner.temp }}
         run: |
           mv "$GITHUB_WORKSPACE/.git" "$RUNNER_TEMP/caller-git"
           if [ -e "$GITHUB_WORKSPACE/.wf" ]; then mv "$GITHUB_WORKSPACE/.wf" "$RUNNER_TEMP/wf-written"; fi
+          mv "$RUNNER_TEMP/wf" "$GITHUB_WORKSPACE/.wf"
       - name: report
         if: always() && steps.target.outputs.number != ''
         working-directory: ${{ runner.temp }}

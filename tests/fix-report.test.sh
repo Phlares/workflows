@@ -27,6 +27,7 @@ check "turns in the job summary" grep -qx "claude-fix: 12 turns, 61 s, 0 denied 
 printf '[{"type":"result","num_turns":3,"duration_ms":2000,"permission_denials":[{"tool_name":"Write"},{"tool_name":"Read"},{"tool_name":"Write"}]}]' > "$tmp/denied.json"
 report EXEC_FILE="$tmp/denied.json"
 check "denied tool calls in the job summary" grep -qx "claude-fix: 3 turns, 2 s, 3 denied tool calls (Read, Write)" "$GITHUB_STEP_SUMMARY"
+check "the comment carries the same line" said "· claude-fix: 3 turns, 2 s, 3 denied tool calls (Read, Write)"
 mv "$FIX_DIR/published" "$tmp/published.old"
 
 report RESULT='{"fixed":false,"summary":"Flaky network test; no code fault."}'
