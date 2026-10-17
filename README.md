@@ -132,8 +132,7 @@ four labels below.
 Rules:
 - `test-command` runs from the repo root, in PR runs only: an issue run never
   runs code, so injected issue text cannot run with the App token. Claude may
-  call it only with test
-  names; CI runs the full suite after the push.
+  call it only with test names; CI runs the full suite after the push.
 - The caller file must be on the default branch before labels work: the
   token exchange compares it with the default branch.
 - Auto fix: uncomment `workflow_run` and list the CI workflow by its `name:`.
