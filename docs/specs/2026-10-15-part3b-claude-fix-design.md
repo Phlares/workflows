@@ -1,6 +1,6 @@
 # Part 3b: CI-fix routing and the `claude-fix` workflow — design
 
-Date: 2026-10-15. Status: approved; revised 2026-10-17 after review (F13, F14, F17, F18; flow 3a; risks) and for v1.2.0 (F13, F17, flow 3b marker).
+Date: 2026-10-15. Status: approved; revised 2026-10-17 after review (F13, F14, F17, F18; flow 3a; risks) and for v1.2.0 (F13, F17, flow 3b marker); revised for v1.x (F7, F18, flows 3a and 4: bounded auto retry, #22; commit author, #19).
 Builds on: `2026-10-12-shared-ci-workflows-design.md` (v1, D1-D9) and `2026-10-15-part2-lint-design.md`.
 Consumer: portfolio epic #617 (PostHog finding, then issue, then fix PR).
 
@@ -37,7 +37,7 @@ The Claude GitHub App connects them. It gives the Action its push identity (`cla
 | F4 | `claude-fix` is a request. The run removes it at start. Adding it again means retry. | A natural loop guard: one label, one run. |
 | F5 | A manual `claude-fix` overrides any owner label | The human decides. The run replaces the owner label with `owner:action`. |
 | F6 | Auto fix is on when the caller lists the `workflow_run` trigger. There is no `auto` input. | One mechanism: the trigger is the switch (D4). |
-| F7 | Auto fix skips: non-PR runs, fork PRs, PRs with any `owner:*` label, commits pushed by `claude[bot]`, and commits that already had an auto attempt | The bot never re-fixes its own failure. That failure goes to the human. |
+| F7 | Auto fix skips: non-PR runs, fork PRs, draft PRs not opened by `claude[bot]`, PRs with any `owner:*` or `needs-human` label, commits pushed by a bot other than `claude[bot]`, and commits that already had an auto try. A PR gets at most `auto-tries` auto tries (default 2). At the cap, the run posts one stop comment that mentions the PR author (the repository owner when the author is a bot) and adds `needs-human`. Label runs always run and do not count. | A fix that is close but wrong gets a second try; the cap stops loops, and the stop reaches a person instead of waiting silently. A person's draft is often red on purpose. Other bots stay out: claude-code-action admits only the bots in `allowed_bots`, here `claude`. A label is a person asking. |
 | F8 | Billing: `CLAUDE_CODE_OAUTH_TOKEN` (subscription). No API key. | Documented for CI on Pro and Max plans. No dollar cap; caps per run (F9) and a usage review instead. |
 | F9 | Caps per run: `max-turns` 50, `timeout-minutes` 20, one run at a time per issue or PR | The median portfolio CI fix in session history took 35 turns and 13-16 min. |
 | F10 | `model` is a caller input. Default `opus` until the pilot (Rollout step 3) sets it. | Session history holds no Sonnet CI fixes, so there is no basis for a cheaper default yet. |
@@ -48,7 +48,7 @@ The Claude GitHub App connects them. It gives the Action its push identity (`cla
 | F15 | When no clear fix exists, the run posts a comment with its findings and stops | A wrong fix costs more review time than a note. |
 | F16 | Routines: a watch item only | Research preview. No CI-failure trigger. Revisit when one ships, or when an HTTP fire from a workflow is documented. |
 | F17 | Trust follows the author of the text Claude reads. Issue runs take only issues whose author is `OWNER`, `MEMBER` or `COLLABORATOR`; other issues get a "Not run" comment. The same rule decides whether a PR run may run code (F13). HTML comments are removed from the issue body. | The label shows a maintainer read the issue, but CI and Vercel run whatever the fix pushes, before review. Until there is a gated lane (F18), untrusted text must not reach Claude. Comments do not render, so the labeller never saw them. |
-| F18 | Untrusted authors (#617 visitor issues) get a second lane later: the fix pushes with `GITHUB_TOKEN`, so its PR CI waits for "Approve and run workflows". Not built in v1.1.0. | The model GitHub uses for its Copilot coding agent. Open items: the "Allow GitHub Actions to create pull requests" setting, Vercel previews (they build every pushed branch, and repo config cannot block them), a live check of the hold. Required-reviewer environments are public-repo only on Pro. |
+| F18 | Untrusted authors (#617 visitor issues) get a second lane later: the fix pushes with `GITHUB_TOKEN`, so its PR CI waits for "Approve and run workflows". Not built in v1.1.0. | The model GitHub uses for its Copilot coding agent. Open items: the "Allow GitHub Actions to create pull requests" setting, Vercel previews (they build every pushed branch, and repo config cannot block them), a live check of the hold, and the F13 exemption for `github-actions[bot]` commits: that lane pushes visitor-shaped code as that account, so the exemption goes when it lands. Since v1.x (#19) claude-fix commits carry `claude[bot]` as author, so only older fix commits need it. Required-reviewer environments are public-repo only on Pro. |
 
 ## Labels
 
@@ -58,8 +58,9 @@ The Claude GitHub App connects them. It gives the Action its push identity (`cla
 | `owner:cloud` | A cloud session owns fixes | the developer, with `/autofix-pr` | the developer; merge or close |
 | `owner:action` | A `claude-fix` run is working | `claude-fix.yml`, at start | `claude-fix.yml`, at end (also on failure) |
 | `claude-fix` | Request a fix run | the developer; the session-end hook | `claude-fix.yml`, at start |
+| `needs-human` | Auto fix stopped at its cap (F7); auto runs skip the PR | `claude-fix.yml`, at the cap | the developer |
 
-The plan creates the four labels in each adopting repo (`gh label create`).
+The plan creates the five labels in each adopting repo (`gh label create`).
 
 ## Flows
 
@@ -86,7 +87,7 @@ A session that dies without `SessionEnd` leaves a stale `owner:local`. The devel
 5. claude-code-action runs with the issue title and body, HTML comments removed, as the task.
 6. Claude edits and calls `fix-publish.sh`, which pushes `claude/issue-<n>-<run id>` and opens a draft PR that says `Fixes #<n>`.
 7. Release: remove `owner:action`. The push starts the PR's CI.
-8. A failure on that PR goes to the developer (F7). They may add `claude-fix` to the PR (flow 3b).
+8. A failure on that PR gets auto tries when auto fix is on (flow 4), then goes to the developer. They may add `claude-fix` to the PR (flow 3b).
 
 ### 3b. `claude-fix` on a PR
 
@@ -94,7 +95,7 @@ A session that dies without `SessionEnd` leaves a stale `owner:local`. The devel
 2. Claim: remove `claude-fix` and any owner label, add `owner:action`.
 3. Check out the PR head branch. Run setup when `test-command` is set and the PR author is a collaborator (F13): a bot's PR, such as a dependency bump, brings install scripts no collaborator wrote.
 4. Collect the failure: download the `ci-failure-*` artifacts (`report.json`) from failed runs on the head commit. For a failed job without a report, save the last 200 lines of `gh run view --log-failed`.
-5. claude-code-action runs with those files as the task. Claude fixes, runs targeted tests, and pushes one commit to the PR branch.
+5. claude-code-action runs with those files as the task. Claude fixes, runs targeted tests, and pushes one commit to the PR branch. The commit author is `claude[bot]` (the action's `bot_id` and `bot_name`).
 6. Release: remove `owner:action`. The push starts CI.
 
 ### 3c. Hand-off to the cloud
@@ -104,8 +105,11 @@ The developer runs `/autofix-pr` on the PR branch, then `gh pr edit <n> --add-la
 ### 4. Auto fix (opt-in)
 
 1. A listed CI workflow completes with conclusion `failure`. `workflow_run` runs the caller from the default branch, so a PR cannot change the gate.
-2. The gate step applies F7. The per-commit marker is a hidden line, `<!-- claude-fix/auto <sha> -->`, in the outcome comment. The gate counts only comments by `github-actions[bot]`: only workflows in the repo post as that account, so visitors cannot forge it. A forged or stray marker would only stop auto fix on that commit. (v1.1 used a commit status; that needed `statuses: write`. A run history check does not work: `workflow_run` runs carry the default branch commit, not the PR commit.)
-3. If the gate passes, the run continues as flow 3b from step 2.
+2. The gate step applies F7. Each auto run hides a marker line, `<!-- claude-fix/auto <sha> -->`, in its outcome comment. The gate reads only comments by `github-actions[bot]`: only workflows in the repo post as that account, so visitors cannot forge it. A marker for the failed commit means it was tried. The number of distinct commits in the markers is the try count for the PR. A forged or stray marker would only stop auto fix early. (v1.1 used a commit status; that needed `statuses: write`. A run history check does not work: `workflow_run` runs carry the default branch commit, not the PR commit.)
+3. If the gate passes, the run continues as flow 3b from step 2. A `claude[bot]` push starts CI again, so a fix that fails CI comes back here as the next try.
+4. At the cap, the run posts the stop comment (F7), adds `needs-human`, and stops. Later auto runs skip the PR on that label. A person who removes it gets one more stop at the next failure, not more tries.
+
+An example with the default cap: a person's commit A fails (try 1, marker A, push B); B fails (try 2, marker B, push C); C fails (stop). A person who keeps a PR red gets the same: two tries on their commits, then one stop.
 
 Several workflows can fail on one commit. `concurrency: claude-fix-<pr>` (no cancel) queues them. The first run posts the marker when it ends; later runs start after it, see it and stop. If the outcome comment fails to post, one more auto try can happen on that commit.
 
@@ -121,6 +125,7 @@ Trigger: `workflow_call`. One job.
 | `runs-on` | string | `ubuntu-latest` | Runner label |
 | `node-version`, `python-version`, `zig-version`, `working-directory`, `install`, `env` | | as `check.yml` | Setup, through the composite action |
 | `test-command` | string | `""` | Command the run may call with specific tests. Empty = no setup, no tests |
+| `auto-tries` | number | `2` | Auto tries per PR (F7). `0` = stop on the first auto failure |
 
 Secret: `CLAUDE_CODE_OAUTH_TOKEN` (required), passed by name (D5).
 
@@ -203,7 +208,7 @@ A full `claude-fix` run is tested in the pilot, not in self-test, because it spe
 | CI and Vercel run Claude-written code with repo secrets before review | Accepted for collaborator-authored issues and PR runs (trusted input). Untrusted input waits for F18. |
 | Claude reads the App token from `.git/config` | Issue runs have no network tool and no shell; the token is revoked when the fix step ends |
 | The App's Workflows write lets a hijacked run change CI | Branch protection; draft-only output; human review of every diff |
-| Usage limits drain | F9 caps; auto off by default; two-week review |
+| Usage limits drain | F9 caps; auto off by default; `auto-tries` per PR (F7); two-week review |
 | Stale `owner:local` after a crash | Manual `claude-fix` overrides (F5) |
 | Runs fight over one PR | F1 single owner; per-PR concurrency group |
 | Targeted test rule ignored | The full suite still runs in CI after the push |

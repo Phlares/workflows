@@ -120,7 +120,7 @@ jobs:
 
 Setup per repo: install the Claude GitHub App, add the
 `CLAUDE_CODE_OAUTH_TOKEN` secret (from `claude setup-token`), and create the
-four labels below.
+five labels below.
 
 | Input | Default | Meaning |
 |---|---|---|
@@ -131,6 +131,7 @@ four labels below.
 | `runs-on` | `ubuntu-latest` | Runner label |
 | `node-version`, `python-version`, `zig-version`, `working-directory`, `install`, `env` | as `check.yml` | Setup before tests |
 | `test-command` | empty | Command Claude may run with specific test names, in PR runs on a collaborator's PR only. Empty = no setup and no tests in the fix job |
+| `auto-tries` | `2` | Auto fix tries per PR. `0` = stop on the first auto failure |
 
 | Label | Meaning |
 |---|---|
@@ -138,6 +139,7 @@ four labels below.
 | `owner:local` | A local session owns fixes (set when it opens the PR) |
 | `owner:cloud` | A cloud session owns fixes |
 | `owner:action` | A `claude-fix` run is working |
+| `needs-human` | Auto fix stopped at `auto-tries`; auto runs skip the PR until it is removed |
 
 Rules:
 - `test-command` runs from the repo root, only in PR runs on a PR written by
@@ -151,9 +153,14 @@ Rules:
   a PR opened before it needs the default branch merged in; until then its
   runs skip with "Claude did not run".
 - Auto fix: uncomment `workflow_run` and list the CI workflow by its `name:`.
-  It skips non-PR runs, forks, PRs with an `owner:*` label, commits pushed
-  by a bot, and commits it already tried. The try is marked by a hidden line
-  in the outcome comment from `github-actions[bot]`.
+  It skips non-PR runs, forks, draft PRs (except Claude's own), PRs with an
+  `owner:*` or `needs-human` label, commits pushed by a bot other than
+  `claude[bot]`, and commits it already tried. The try is marked by a hidden
+  line in the outcome comment from `github-actions[bot]`.
+- Auto retry: a fix that still fails CI gets another auto try, up to
+  `auto-tries` per PR. At the cap, the run posts one comment that mentions the
+  PR author (the repo owner when the author is a bot) and adds `needs-human`.
+  Label runs always run and do not count toward the cap.
 - Issue runs take only issues written by collaborators (`OWNER`, `MEMBER`,
   `COLLABORATOR`). Other issues get a "Not run" comment. Text GitHub does not
   render (HTML comments, link reference lines, zero-width characters) is

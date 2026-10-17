@@ -2,7 +2,9 @@
 # Picks what a claude-fix run works on, from the event that started it.
 # Prints KEY=VALUE lines for $GITHUB_OUTPUT, or skip=<reason>. For
 # workflow_run (auto fix) it applies the gate: PR runs only, not pushed by
-# a bot, PR head unchanged, no owner:* label, one try per commit.
+# a bot other than claude[bot], PR head unchanged, no person's draft, no
+# owner:* or needs-human label, one try per commit, $AUTO_TRIES per PR. At
+# the cap it prints stop=<login to mention> with the number.
 # exec=true lets the run install and run tests. Only PRs written by a
 # collaborator get it: an issue run could write code and then run it, and a
 # bot's PR (a dependency bump) brings install scripts no collaborator wrote.
@@ -52,18 +54,28 @@ case $1 in
     n=$(get '.workflow_run.pull_requests[0].number')
     [ -n "$n" ] || skip "not a PR run"
     actor=$(get .workflow_run.actor.login)
-    [ "$actor" != "claude[bot]" ] || skip "pushed by claude[bot]"
-    # claude-code-action refuses non-human actors; a run would only burn the one try.
-    [ "$(get .workflow_run.actor.type)" != Bot ] || skip "pushed by a bot ($actor)"
-    read -r head author < <("$GH" api "repos/$repo/pulls/$n" --jq '"\(.head.sha) \(.author_association)"')
+    # claude-code-action admits only claude[bot] among bots (allowed_bots);
+    # its pushes retry until the cap below.
+    [ "$actor" = "claude[bot]" ] || [ "$(get .workflow_run.actor.type)" != Bot ] || skip "pushed by a bot ($actor)"
+    read -r head author draft login type < <("$GH" api "repos/$repo/pulls/$n" \
+      --jq '"\(.head.sha) \(.author_association) \(.draft) \(.user.login) \(.user.type)"')
     [ "$head" = "$sha" ] || skip "PR head moved past $sha"
-    owners=$("$GH" api "repos/$repo/issues/$n/labels" --jq '[.[].name | select(startswith("owner:"))] | join(",")')
+    # A person's draft is often red on purpose; claude[bot]'s are issue fixes.
+    [ "$draft" = false ] || [ "$login" = "claude[bot]" ] || skip "draft PR"
+    # needs-human marks a stopped PR, so a stop is posted once.
+    owners=$("$GH" api "repos/$repo/issues/$n/labels" \
+      --jq '[.[].name | select(startswith("owner:") or . == "needs-human")] | join(",")')
     [ -z "$owners" ] || skip "owned by $owners"
     # fix-report.sh writes the marker into its comment. Only workflows in
     # this repo post as github-actions[bot], so visitors cannot forge it.
     tried=$("$GH" api --paginate "repos/$repo/issues/$n/comments" \
-      --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | contains(\"<!-- claude-fix/auto $sha -->\"))) | .id")
-    [ -z "$tried" ] || skip "auto fix already tried on $sha"
+      --jq '.[] | select(.user.login == "github-actions[bot]") | .body | capture("<!-- claude-fix/auto (?<s>[^ ]+) -->"; "g").s' | sort -u)
+    ! grep -qxF "$sha" <<<"$tried" || skip "auto fix already tried on $sha"
+    tries=$(grep -c . <<<"$tried" || true)
+    if [ "$tries" -ge "$AUTO_TRIES" ]; then
+      [ "$type" = User ] || login=$(get .repository.owner.login)
+      printf 'skip=auto fix stopped after %s tries\nnumber=%s\nstop=%s\n' "$tries" "$n" "$login"; exit 0
+    fi
     printf 'kind=pr\nnumber=%s\nbranch=%s\nsha=%s\nauto=true\nexec=%s\n' \
       "$n" "$(get .workflow_run.head_branch)" "$sha" "$(may_exec "$author" "$n")" ;;
   *) skip "unsupported event $1" ;;
