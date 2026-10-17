@@ -96,7 +96,7 @@ on:
   pull_request: { types: [labeled] }
   # Auto fix (opt-in): uncomment.
   # workflow_run: { workflows: [CI], types: [completed] }
-permissions: { contents: write, pull-requests: write, issues: write, actions: read, statuses: write, id-token: write }
+permissions: { contents: write, pull-requests: write, issues: write, actions: read, id-token: write }
 jobs:
   fix:
     if: github.event.label.name == 'claude-fix' || github.event.workflow_run.conclusion == 'failure'
@@ -116,11 +116,12 @@ four labels below.
 | Input | Default | Meaning |
 |---|---|---|
 | `model` | `opus` | Model alias |
+| `effort` | `medium` | Reasoning effort (`low`, `medium`, `high`, ...); empty = model default |
 | `max-turns` | `50` | Turn limit for one run |
 | `timeout-minutes` | `20` | Limit for the fix step and for `install` |
 | `runs-on` | `ubuntu-latest` | Runner label |
 | `node-version`, `python-version`, `zig-version`, `working-directory`, `install`, `env` | as `check.yml` | Setup before tests |
-| `test-command` | empty | Command Claude may run with specific test names, in PR runs only. Empty = no setup and no tests in the fix job |
+| `test-command` | empty | Command Claude may run with specific test names, in PR runs on a collaborator's PR only. Empty = no setup and no tests in the fix job |
 
 | Label | Meaning |
 |---|---|
@@ -130,8 +131,10 @@ four labels below.
 | `owner:action` | A `claude-fix` run is working |
 
 Rules:
-- `test-command` runs from the repo root, in PR runs only: an issue run never
-  runs code, so injected issue text cannot run with the App token. Claude may
+- `test-command` runs from the repo root, only in PR runs on a PR written by
+  a collaborator. Issue runs and bot PRs (Dependabot) never install or run
+  code: injected issue text or a bumped package's install script cannot run
+  with the App token. Claude may
   call it only with test names; CI runs the full suite after the push.
 - The caller file must be on the default branch before labels work: the
   token exchange compares it with the default branch. After a caller change,
@@ -139,7 +142,8 @@ Rules:
   runs skip with "Claude did not run".
 - Auto fix: uncomment `workflow_run` and list the CI workflow by its `name:`.
   It skips non-PR runs, forks, PRs with an `owner:*` label, commits pushed
-  by `claude[bot]`, and commits it already tried (status `claude-fix/auto`).
+  by a bot, and commits it already tried. The try is marked by a hidden line
+  in the outcome comment from `github-actions[bot]`.
 - Issue runs take only issues written by collaborators (`OWNER`, `MEMBER`,
   `COLLABORATOR`). Other issues get a "Not run" comment. Text GitHub does not
   render (HTML comments, link reference lines, zero-width characters) is
