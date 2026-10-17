@@ -2,7 +2,8 @@
 # Posts the outcome of a claude-fix run on its issue or PR, and the turn
 # count and time to the job summary. Inputs come from env; see claude-fix.yml.
 # An auto run hides a marker in the comment: fix-target.sh reads it to allow
-# one auto try per commit.
+# one auto try per commit and count tries per PR. A stop (the auto-tries cap)
+# mentions $STOP and adds needs-human, which keeps later auto runs quiet.
 set -euo pipefail
 GH=${GH:-gh}
 published=$(cat "$FIX_DIR/published" 2>/dev/null || true)
@@ -31,7 +32,9 @@ if [ -s "${EXEC_FILE:-}" ]; then
   echo "$stats" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
 fi
 body=$head
+[ -z "${STOP:-}" ] || body+=$'\n\n'"@$STOP: this PR needs a person."
 [ -z "$summary" ] || body+=$'\n\n'"$summary"
 body+=$'\n\n'"[Run log]($RUN_URL)${stats:+ · $stats}"
 [ "${AUTO:-}" != true ] || body+=$'\n'"<!-- claude-fix/auto $SHA -->"
 "$GH" api "repos/$REPO/issues/$NUMBER/comments" -f body="$body" --silent
+[ -z "${STOP:-}" ] || "$GH" api "repos/$REPO/issues/$NUMBER/labels" -f "labels[]=needs-human" --silent

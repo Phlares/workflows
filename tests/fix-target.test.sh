@@ -4,11 +4,11 @@
 script="$root/.github/scripts/fix-target.sh"
 run() { # $1 event name, $2 event JSON; sets out
   printf '%s' "$2" > "$tmp/event.json"
-  out=$(GITHUB_RUN_ID=777 bash "$script" "$1" "$tmp/event.json" 2>&1)
+  out=$(GITHUB_RUN_ID=777 AUTO_TRIES=${tries:-2} bash "$script" "$1" "$tmp/event.json" 2>&1)
 }
 is() { [ "$out" = "$1" ] || { echo "     got: $out"; return 1; }; }
 sha=c0ffee0000000000000000000000000000000000
-repo='"repository":{"full_name":"o/r","default_branch":"main"}'
+repo='"repository":{"full_name":"o/r","default_branch":"main","owner":{"login":"o"}}'
 wr() { # $1 extra workflow_run fields
   printf '{%s,"workflow_run":{"conclusion":"failure","head_sha":"%s","head_branch":"feat","actor":{"login":"dev"},"pull_requests":[{"number":7}]%s}}' "$repo" "$sha" "$1"
 }
@@ -18,7 +18,13 @@ pr() { # $1 state, $2 author association
 issue() { # $1 state, $2 author association
   printf '{%s,"issue":{"number":5,"state":"%s","author_association":"%s"}}' "$repo" "$1" "$2"
 }
-open_pr() { respond 'api repos/o/r/pulls/7 *' '{"head":{"sha":"'"$sha"'"},"author_association":"'"${1:-OWNER}"'"}'; }
+open_pr() { # $1 JSON object merged over a person's open, ready PR
+  local over=${1:-'{}'}
+  respond 'api repos/o/r/pulls/7 *' "$(jq -nc --arg s "$sha" --argjson o "$over" \
+    '{head: {sha: $s}, author_association: "OWNER", draft: false, user: {login: "dev", type: "User"}} * $o')"
+}
+claude_pr='{"author_association":"NONE","user":{"login":"claude[bot]","type":"Bot"}}'
+claude_push() { wr '' | jq -c '.workflow_run.actor = {"login":"claude[bot]","type":"Bot"}'; }
 no_owner() { respond 'api repos/o/r/issues/7/labels*' '[{"name":"bug"}]'; }
 commits() { respond 'api --paginate repos/o/r/pulls/7/commits*' "$1"; }
 # A person's commit, and commits from this repo's own bots (claude-fix pushes).
@@ -27,7 +33,9 @@ human() {
 }
 bot='"user":{"login":"github-actions[bot]"}'
 comments() { respond 'api --paginate repos/o/r/issues/7/comments*' "$1"; }
-no_marker() { comments '[{'"$bot"',"body":"Fixed.\n<!-- claude-fix/auto old -->"}]'; }
+marker() { printf '{%s,"body":"%s\\n<!-- claude-fix/auto %s -->"}' "${2:-$bot}" "Fixed." "$1"; }
+no_marker() { comments "[$(marker old)]"; }
+stop_out() { printf 'skip=auto fix stopped after %s tries\nnumber=7\nstop=%s' "$1" "$2"; }
 issue_out=$'kind=issue\nnumber=5\nbranch=claude/issue-5-777\nbase=main\nexec=false'
 pr_out=$'kind=pr\nnumber=7\nbranch=feat\nsha='"$sha"
 
@@ -69,7 +77,7 @@ reset_gh; open_pr; no_owner; no_marker; human
 run workflow_run "$(wr '')"
 check "auto: gate passes" is "$pr_out"$'\nauto=true\nexec=true'
 
-reset_gh; open_pr NONE; no_owner; no_marker; human
+reset_gh; open_pr '{"author_association":"NONE"}'; no_owner; no_marker; human
 run workflow_run "$(wr '')"
 check "auto: PR by a non-collaborator: no code runs" is "$pr_out"$'\nauto=true\nexec=false'
 
@@ -84,12 +92,50 @@ check "auto: a passing run is skipped" is "skip=run did not fail"
 run workflow_run "$(wr '' | jq -c '.workflow_run.pull_requests = []')"
 check "auto: non-PR (or fork) run is skipped" is "skip=not a PR run"
 
-run workflow_run "$(wr '' | jq -c '.workflow_run.actor.login = "claude[bot]"')"
-check "auto: claude[bot] push is skipped" is "skip=pushed by claude[bot]"
-check "auto: bot check needs no API call" test ! -s "$FAKE_GH_LOG"
-
 run workflow_run "$(wr '' | jq -c '.workflow_run.actor = {"login":"dependabot[bot]","type":"Bot"}')"
 check "auto: other bots are skipped" is "skip=pushed by a bot (dependabot[bot])"
+check "auto: bot check needs no API call" test ! -s "$FAKE_GH_LOG"
+
+reset_gh; open_pr; no_owner; no_marker; human
+run workflow_run "$(claude_push)"
+check "auto: claude[bot] push under the cap passes" is "$pr_out"$'\nauto=true\nexec=true'
+
+reset_gh; open_pr; no_owner; human; comments "[$(marker old1),$(marker old2)]"
+run workflow_run "$(claude_push)"
+check "auto: at the cap, stops and names the PR author" is "$(stop_out 2 dev)"
+
+reset_gh; open_pr "$claude_pr"; no_owner; human; comments "[$(marker old1),$(marker old2)]"
+run workflow_run "$(claude_push)"
+check "auto: at the cap on claude[bot]'s PR, names the repo owner" is "$(stop_out 2 o)"
+
+reset_gh; open_pr; no_owner; human; comments "[$(marker old1)][$(marker old1)]"
+run workflow_run "$(claude_push)"
+check "auto: one commit tried twice counts once" is "$pr_out"$'\nauto=true\nexec=true'
+
+reset_gh; open_pr; no_owner; human
+comments "[$(marker old1 '"user":{"login":"visitor"}'),$(marker old2 '"user":{"login":"visitor"}')]"
+run workflow_run "$(claude_push)"
+check "auto: markers from anyone but github-actions[bot] do not count" is "$pr_out"$'\nauto=true\nexec=true'
+
+reset_gh; open_pr; no_owner; human; comments "[$(marker old1),$(marker "$sha")]"
+run workflow_run "$(claude_push)"
+check "auto: a tried commit at the cap is skipped, not stopped again" is "skip=auto fix already tried on $sha"
+
+reset_gh; open_pr; no_owner; human; comments '[]'
+tries=0 run workflow_run "$(wr '')"
+check "auto: auto-tries 0 stops on the first failure" is "$(stop_out 0 dev)"
+
+reset_gh; open_pr; respond 'api repos/o/r/issues/7/labels*' '[{"name":"needs-human"}]'
+run workflow_run "$(claude_push)"
+check "auto: a stopped PR (needs-human) is skipped" is "skip=owned by needs-human"
+
+reset_gh; open_pr '{"draft":true}'
+run workflow_run "$(wr '')"
+check "auto: a person's draft PR is skipped" is "skip=draft PR"
+
+reset_gh; open_pr "$(jq -c '.draft = true' <<<"$claude_pr")"; no_owner; no_marker; human
+run workflow_run "$(claude_push)"
+check "auto: claude[bot]'s draft PR runs, without code" is "$pr_out"$'\nauto=true\nexec=false'
 
 reset_gh; respond 'api repos/o/r/pulls/7 *' '{"head":{"sha":"def"},"author_association":"OWNER"}'
 run workflow_run "$(wr '')"

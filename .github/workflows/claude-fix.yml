@@ -20,6 +20,7 @@ on:
       install: { type: string, default: "" }
       env: { type: string, default: "" }
       test-command: { type: string, default: "" }
+      auto-tries: { type: number, default: 2 }
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN: { required: true }
 
@@ -66,6 +67,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
+          AUTO_TRIES: ${{ inputs.auto-tries }}
         run: bash "$FIX_DIR/bin/fix-target.sh" "$EVENT_NAME" "$GITHUB_EVENT_PATH" | tee -a "$GITHUB_OUTPUT"
       # Claim. Labels set with GITHUB_TOKEN start no workflows, so this cannot loop.
       - id: claim
@@ -152,6 +154,12 @@ jobs:
         uses: anthropics/claude-code-action@f27be6b65a4652f08a2ba3cff79114829b588967 # v1.0.252
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Auto retries start from claude[bot]'s own pushes; fix-target.sh
+          # skips every other bot.
+          allowed_bots: claude
+          # The default id is github-actions[bot]'s, so commits showed that author.
+          bot_id: "209825114"
+          bot_name: claude[bot]
           claude_args: ${{ steps.args.outputs.claude-args }}
           settings: ${{ steps.args.outputs.settings }}
           prompt: |
@@ -189,6 +197,7 @@ jobs:
           SHA: ${{ steps.target.outputs.sha }}
           AUTO: ${{ steps.target.outputs.auto }}
           SKIP: ${{ steps.target.outputs.skip }}
+          STOP: ${{ steps.target.outputs.stop }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           EMPTY: ${{ steps.collect.outputs.empty }}
           OUTCOME: ${{ steps.fix.outcome }}

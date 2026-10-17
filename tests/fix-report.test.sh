@@ -6,14 +6,21 @@ export REPO=o/r NUMBER=7 SHA=abc RUN_URL=https://github.com/o/r/actions/runs/1 F
 mkdir -p "$FIX_DIR"
 printf '[{"type":"system"},{"type":"result","num_turns":12,"duration_ms":61500,"is_error":false}]' > "$tmp/exec.json"
 report() { # env assignments for this case as arguments
-  reset_gh; respond 'api repos/o/r/issues/7/comments*' '{}'; : > "$GITHUB_STEP_SUMMARY"
-  env AUTO= EMPTY= OUTCOME=success RESULT= EXEC_FILE="$tmp/exec.json" "$@" bash "$script" >/dev/null 2>&1
+  reset_gh; respond 'api repos/o/r/issues/7/comments*' '{}'; respond 'api repos/o/r/issues/7/labels*' '[]'
+  : > "$GITHUB_STEP_SUMMARY"
+  env AUTO= EMPTY= STOP= OUTCOME=success RESULT= EXEC_FILE="$tmp/exec.json" "$@" bash "$script" >/dev/null 2>&1
 }
 not_in() { ! grep -qF "$1" "$2"; }
 said() { grep -qF "$1" "$FAKE_GH_LOG" || { echo "     log: $(cat "$FAKE_GH_LOG")"; return 1; }; }
 
 report SKIP='the issue author is not a collaborator (NONE)' OUTCOME= EXEC_FILE=
 check "refused run: says why" said "Not run: the issue author is not a collaborator (NONE)."
+check "refused run: no label" not_in "labels" "$FAKE_GH_LOG"
+
+report SKIP='auto fix stopped after 2 tries' STOP=dev OUTCOME= EXEC_FILE=
+check "stop: says why" said "Not run: auto fix stopped after 2 tries."
+check "stop: mentions the person" said "@dev: this PR needs a person."
+check "stop: adds needs-human" said "labels[]=needs-human"
 
 report EMPTY=true EXEC_FILE=
 check "no failures: says so" said "No failed CI runs found on abc"
