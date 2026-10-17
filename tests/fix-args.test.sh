@@ -4,6 +4,7 @@
 script="$root/.github/scripts/fix-args.sh"
 export HOME=/home/runner GITHUB_WORKSPACE=/home/runner/work/r/r RUNNER_TEMP=/home/runner/work/_temp
 export FIX_DIR=$RUNNER_TEMP/fix MODEL=opus MAX_TURNS=50
+args=()
 run() { # $1 kind, $2 test command; sets args (the parsed argument list)
   out=$(KIND=$1 TEST_COMMAND=$2 bash "$script")
   eval "args=($out)"
