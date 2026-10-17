@@ -9,6 +9,7 @@ report() { # env assignments for this case as arguments
   reset_gh; respond 'api repos/o/r/issues/7/comments*' '{}'; : > "$GITHUB_STEP_SUMMARY"
   env AUTO= EMPTY= OUTCOME=success RESULT= EXEC_FILE="$tmp/exec.json" "$@" bash "$script" >/dev/null 2>&1
 }
+not_in() { ! grep -qF "$1" "$2"; }
 said() { grep -qF "$1" "$FAKE_GH_LOG" || { echo "     log: $(cat "$FAKE_GH_LOG")"; return 1; }; }
 
 report SKIP='the issue author is not a collaborator (NONE)' OUTCOME= EXEC_FILE=
@@ -41,7 +42,7 @@ check "step failed or timed out: says so" said "ended without a fix (failure)"
 
 report AUTO=true OUTCOME=failure
 check "auto run: marks the commit as tried" said "<!-- claude-fix/auto abc -->"
-check "label run: no marker" sh -c '! grep -q "claude-fix/auto" "$1"' _ "$tmp/label.log"
+check "label run: no marker" not_in "claude-fix/auto" "$tmp/label.log"
 
 report RESULT='not json'
 check "bad structured output: still comments" said "No fix pushed."

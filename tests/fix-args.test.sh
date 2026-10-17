@@ -58,6 +58,6 @@ check "exec: schema is valid JSON" jq -e '.required == ["fixed","summary"]' <<<"
 
 run true ""
 check "exec without test command: no empty rule" lacks "$(flag --allowedTools)" "Bash(:*)"
-EFFORT= run true ""
+EFFORT='' run true ""
 check "empty effort: no flag" lacks " ${args[*]} " " --effort "
 finish
