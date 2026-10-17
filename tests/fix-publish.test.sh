@@ -11,8 +11,8 @@ setup() { # $1 kind, $2 push branch → fresh remote, work tree, FIX_DIR; cd int
   git config user.email t@example.com; git config user.name t
   echo a > a.txt; git add a.txt; git commit -qm init; git push -q origin HEAD:main HEAD:feat
   mkdir -p "$d/fix/bin"; cp "$script" "$d/fix/bin/"
-  printf 'FIX_REPO=%q\nFIX_KIND=%q\nFIX_NUMBER=5\nFIX_BRANCH=%q\nFIX_BASE=main\nFIX_START=%q\n' \
-    "$d/work" "$1" "$2" "$(git rev-parse HEAD)" > "$d/fix/publish.env"
+  printf 'FIX_REPO=%q\nFIX_REMOTE=%q\nFIX_KIND=%q\nFIX_NUMBER=5\nFIX_BRANCH=%q\nFIX_BASE=main\nFIX_START=%q\n' \
+    "$d/work" "$(git remote get-url origin | sed 's#\.git$##')" "$1" "$2" "$(git rev-parse HEAD)" > "$d/fix/publish.env"
   reset_gh
 }
 pub() { out=$(bash "$d/fix/bin/fix-publish.sh" "$@" 2>&1); code=$?; }
@@ -58,6 +58,16 @@ setup pr feat; echo b > a.txt; echo '* filter=x' > .gitattributes
 printf '[filter "x"]\n\tclean = touch %s/filter-ran; cat\n' "$d" > "$d/evil.cfg"; git config include.path "$d/evil.cfg"
 pub "fix: thing"
 check "keys pulled in through include.path are checked" test "$code" -ne 0 -a ! -e "$d/filter-ran"
+
+setup pr feat; echo b > a.txt; git config extensions.worktreeConfig true
+printf '[filter "x"]\n\tclean = touch %s/wt-ran; cat\n' "$d" > .git/config.worktree; echo '* filter=x' > .gitattributes
+pub "fix: thing"
+check "worktree config cannot hide keys" test "$code" -ne 0 -a ! -e "$d/wt-ran"
+
+setup pr feat; echo b > a.txt; git clone -q --bare "$d/remote.git" "$d/evil.git"; git remote set-url origin "$d/evil.git"
+pub "fix: thing"
+check "a push URL for another repo is refused" grep -q 'refused: origin points at' <<<"$out"
+check "nothing reaches the other repo" test "$(git --git-dir="$d/evil.git" log -1 --format=%s feat)" = "init"
 
 setup pr feat
 pub "fix: thing"

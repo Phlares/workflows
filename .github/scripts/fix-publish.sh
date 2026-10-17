@@ -17,9 +17,13 @@ cd "$FIX_REPO"
 # Claude can write .git/config. Allow only the keys actions/checkout and
 # claude-code-action set: credential.helper, core.sshCommand, filter.*,
 # url.* and the like can run commands or send the push elsewhere.
-allowed='^(core\.(repositoryformatversion|filemode|bare|logallrefupdates|ignorecase|precomposeunicode|symlinks)|remote\.origin\.(url|fetch)|branch\..+\.(remote|merge)|user\.(name|email)|gc\.auto|include\.path|includeif\..+\.path|extensions\.[a-z]+)$'
+allowed='^(core\.(repositoryformatversion|filemode|bare|logallrefupdates|ignorecase|precomposeunicode|symlinks)|remote\.origin\.(url|fetch)|branch\..+\.(remote|merge)|user\.(name|email)|gc\.auto|include\.path|includeif\..+\.path)$'
+# No extensions.*: worktreeConfig would load a second file this list skips.
 bad=$(git config --local --includes --name-only --list | grep -viE "$allowed" || true)
 [ -z "$bad" ] || die "refused: unexpected .git/config keys: $(tr '\n' ' ' <<<"$bad")"
+# origin carries the token: it must still point at this repo.
+url=$(git remote get-url --push origin | sed -E 's#//[^/@]*@#//#; s#\.git$##')
+[ "$url" = "$FIX_REMOTE" ] || die "refused: origin points at $url, not $FIX_REMOTE"
 git add -A
 git diff --cached --quiet || git commit -q -m "$1"
 ! git diff --quiet "$FIX_START" HEAD || die "no changes to publish"

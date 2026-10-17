@@ -129,8 +129,8 @@ jobs:
           TEST_COMMAND: ${{ inputs.test-command }}
         run: |
           install -D -m 555 .wf/.github/scripts/fix-publish.sh "$FIX_DIR/bin/fix-publish.sh"
-          printf 'FIX_REPO=%q\nFIX_KIND=%q\nFIX_NUMBER=%q\nFIX_BRANCH=%q\nFIX_BASE=%q\nFIX_START=%q\n' \
-            "$GITHUB_WORKSPACE" "$KIND" "$NUMBER" "$BRANCH" "$BASE" "$(git rev-parse HEAD)" > "$FIX_DIR/publish.env"
+          printf 'FIX_REPO=%q\nFIX_REMOTE=%q\nFIX_KIND=%q\nFIX_NUMBER=%q\nFIX_BRANCH=%q\nFIX_BASE=%q\nFIX_START=%q\n' \
+            "$GITHUB_WORKSPACE" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "$KIND" "$NUMBER" "$BRANCH" "$BASE" "$(git rev-parse HEAD)" > "$FIX_DIR/publish.env"
           # Read-only and outside --add-dir: issue runs cannot retarget the push.
           chmod 444 "$FIX_DIR/publish.env"
           q() { local r="'\\''"; printf "'%s'" "${1//\'/$r}"; }
