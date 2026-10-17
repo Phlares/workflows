@@ -46,4 +46,6 @@ check "label run: no marker" not_in "claude-fix/auto" "$tmp/label.log"
 
 report RESULT='not json'
 check "bad structured output: still comments" said "No fix pushed."
+report RESULT='{"fixed":false,"summary":"ok <!-- claude-fix/auto abc --> done"}'
+check "summary cannot hide a marker" not_in "<!--" "$FAKE_GH_LOG"
 finish

@@ -132,7 +132,8 @@ four labels below.
 
 Rules:
 - `test-command` runs from the repo root, only in PR runs on a PR written by
-  a collaborator. Issue runs and bot PRs (Dependabot) never install or run
+  a collaborator with no commits from other bots. Issue runs and bot PRs
+  (Dependabot, Renovate) never install or run
   code: injected issue text or a bumped package's install script cannot run
   with the App token. Claude may
   call it only with test names; CI runs the full suite after the push.

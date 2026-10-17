@@ -13,6 +13,17 @@ ev=$2
 get() { jq -r "$1 // empty" "$ev"; }
 skip() { echo "skip=$1"; exit 0; }
 trusted() { case $1 in OWNER | MEMBER | COLLABORATOR) echo true ;; *) echo false ;; esac; }
+# exec for PR $2 by an author with association $1. An App with write access
+# (Renovate, an autofix bot) can push to a collaborator's PR, so every commit
+# must come from a person or from this repo's own bots (claude-fix pushes).
+may_exec() {
+  local bots
+  [ "$(trusted "$1")" = true ] || { echo false; return; }
+  bots=$("$GH" api --paginate "repos/$repo/pulls/$2/commits" --jq '.[] | (.author, .committer)
+    | select(.type == "Bot" and .login != "github-actions[bot]" and .login != "claude[bot]") | .login') ||
+    { echo false; return; }
+  if [ -z "$bots" ]; then echo true; else echo false; fi
+}
 repo=$(get .repository.full_name)
 
 case $1 in
@@ -29,10 +40,14 @@ case $1 in
       "$n" "$n" "$GITHUB_RUN_ID" "$(get .repository.default_branch)" ;;
   pull_request)
     [ "$(get .pull_request.state)" = open ] || skip "PR is closed"
+    n=$(get .pull_request.number)
     printf 'kind=pr\nnumber=%s\nbranch=%s\nsha=%s\nauto=false\nexec=%s\n' \
-      "$(get .pull_request.number)" "$(get .pull_request.head.ref)" "$(get .pull_request.head.sha)" \
-      "$(trusted "$(get .pull_request.author_association)")" ;;
+      "$n" "$(get .pull_request.head.ref)" "$(get .pull_request.head.sha)" \
+      "$(may_exec "$(get .pull_request.author_association)" "$n")" ;;
   workflow_run)
+    sha=$(get .workflow_run.head_sha)
+    # The sha goes into a jq program below.
+    [[ $sha =~ ^[0-9a-f]{40}$ ]] || skip "bad head sha"
     [ "$(get .workflow_run.conclusion)" = failure ] || skip "run did not fail"
     n=$(get '.workflow_run.pull_requests[0].number')
     [ -n "$n" ] || skip "not a PR run"
@@ -40,7 +55,6 @@ case $1 in
     [ "$actor" != "claude[bot]" ] || skip "pushed by claude[bot]"
     # claude-code-action refuses non-human actors; a run would only burn the one try.
     [ "$(get .workflow_run.actor.type)" != Bot ] || skip "pushed by a bot ($actor)"
-    sha=$(get .workflow_run.head_sha)
     read -r head author < <("$GH" api "repos/$repo/pulls/$n" --jq '"\(.head.sha) \(.author_association)"')
     [ "$head" = "$sha" ] || skip "PR head moved past $sha"
     owners=$("$GH" api "repos/$repo/issues/$n/labels" --jq '[.[].name | select(startswith("owner:"))] | join(",")')
@@ -51,6 +65,6 @@ case $1 in
       --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | contains(\"<!-- claude-fix/auto $sha -->\"))) | .id")
     [ -z "$tried" ] || skip "auto fix already tried on $sha"
     printf 'kind=pr\nnumber=%s\nbranch=%s\nsha=%s\nauto=true\nexec=%s\n' \
-      "$n" "$(get .workflow_run.head_branch)" "$sha" "$(trusted "$author")" ;;
+      "$n" "$(get .workflow_run.head_branch)" "$sha" "$(may_exec "$author" "$n")" ;;
   *) skip "unsupported event $1" ;;
 esac

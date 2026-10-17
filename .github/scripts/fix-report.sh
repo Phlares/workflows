@@ -7,6 +7,8 @@ set -euo pipefail
 GH=${GH:-gh}
 published=$(cat "$FIX_DIR/published" 2>/dev/null || true)
 summary=$(jq -r '.summary // empty' <<<"${RESULT:-}" 2>/dev/null || true)
+# The summary is model output; a hidden marker in it would block an auto try.
+summary=${summary//"<!--"/}
 if [ -n "${SKIP:-}" ]; then
   head="Not run: $SKIP."
 elif [ "${EMPTY:-}" = true ]; then
