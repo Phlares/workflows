@@ -1,6 +1,6 @@
 # Part 3b: CI-fix routing and the `claude-fix` workflow — design
 
-Date: 2026-10-15. Status: draft for review.
+Date: 2026-10-15. Status: approved; revised 2026-10-17 after review (F13, F14, F17, F18; flow 3a; risks).
 Builds on: `2026-10-12-shared-ci-workflows-design.md` (v1, D1-D9) and `2026-10-15-part2-lint-design.md`.
 Consumer: portfolio epic #617 (PostHog finding, then issue, then fix PR).
 
@@ -43,10 +43,12 @@ The Claude GitHub App connects them. It gives the Action its push identity (`cla
 | F10 | `model` is a caller input. Default `opus` until the pilot (Rollout step 3) sets it. | Session history holds no Sonnet CI fixes, so there is no basis for a cheaper default yet. |
 | F11 | Targeted tests: the run may call `test-command` only with test files or IDs from the failure, never bare. Empty `test-command` = no setup, no tests. | Install plus targeted tests costs 1-2 runner minutes. A wrong blind push costs a full CI run (at least 15 minutes in portfolio). |
 | F12 | Toolchain setup moves into a composite action `.github/actions/setup`, used by `check.yml` and `claude-fix.yml`. Both ship as v1.1.0; `check.yml` inputs do not change. | Two workflows now share the steps. Reverses D9, whose reason ("one workflow") no longer holds. |
-| F13 | Tools: issue runs get file edit tools and `test-command` only. PR runs also get a general shell. No web fetch in either. | Issue text from #617 holds visitor-generated content and can carry prompt injection. PR runs read the repo's own code and CI logs. |
-| F14 | Output is a draft PR or a commit on an existing PR branch. A run never merges, never pushes to the default branch, and never edits `.github/`. | Branch protection enforces the first two. The prompt states the third; review catches a breach. |
+| F13 | Tools: issue runs get file edit tools and the publish script only: no setup, no tests, no shell. PR runs also get a general shell and `test-command`. No web fetch in either. | An issue run that could write a file and then run it (a test, a config) would run injected code with the App token in its environment. PR runs read the repo's own code and CI logs. |
+| F14 | Output is a draft PR or a commit on an existing PR branch. A run never merges, never pushes to the default branch, and never edits `.github/`. | Branch protection enforces the first two. `fix-publish.sh` enforces the third, and refuses unknown `.git/config` keys and an `origin` that is not this repo (Claude can write under `.git/`). |
 | F15 | When no clear fix exists, the run posts a comment with its findings and stops | A wrong fix costs more review time than a note. |
 | F16 | Routines: a watch item only | Research preview. No CI-failure trigger. Revisit when one ships, or when an HTTP fire from a workflow is documented. |
+| F17 | Trust follows the author of the text Claude reads. Issue runs take only issues whose author is `OWNER`, `MEMBER` or `COLLABORATOR`; other issues get a "Not run" comment. HTML comments are removed from the issue body. | The label shows a maintainer read the issue, but CI and Vercel run whatever the fix pushes, before review. Until there is a gated lane (F18), untrusted text must not reach Claude. Comments do not render, so the labeller never saw them. |
+| F18 | Untrusted authors (#617 visitor issues) get a second lane later: the fix pushes with `GITHUB_TOKEN`, so its PR CI waits for "Approve and run workflows". Not built in v1.1.0. | The model GitHub uses for its Copilot coding agent. Open items: the "Allow GitHub Actions to create pull requests" setting, Vercel previews (they build every pushed branch, and repo config cannot block them), a live check of the hold. Required-reviewer environments are public-repo only on Pro. |
 
 ## Labels
 
@@ -78,12 +80,13 @@ A session that dies without `SessionEnd` leaves a stale `owner:local`. The devel
 ### 3a. `claude-fix` on an issue
 
 1. `issues: labeled` starts the caller. The job runs only for the `claude-fix` label.
-2. Claim: remove `claude-fix`, add `owner:action`.
-3. Check out the default branch. Run setup when `test-command` is set.
-4. claude-code-action runs with the issue title and body as the task (F13 tools).
-5. Claude edits, runs targeted tests, and pushes `claude/issue-<n>`. It opens a draft PR that says `Fixes #<n>`.
-6. Release: remove `owner:action`. The push starts the PR's CI.
-7. A failure on that PR goes to the developer (F7). They may add `claude-fix` to the PR (flow 3b).
+2. Gate (F17): an issue not written by a collaborator gets a "Not run" comment and stops.
+3. Claim: remove `claude-fix`, add `owner:action`.
+4. Check out the default branch. No setup and no tests (F13).
+5. claude-code-action runs with the issue title and body, HTML comments removed, as the task.
+6. Claude edits and calls `fix-publish.sh`, which pushes `claude/issue-<n>-<run id>` and opens a draft PR that says `Fixes #<n>`.
+7. Release: remove `owner:action`. The push starts the PR's CI.
+8. A failure on that PR goes to the developer (F7). They may add `claude-fix` to the PR (flow 3b).
 
 ### 3b. `claude-fix` on a PR
 
@@ -195,7 +198,9 @@ A full `claude-fix` run is tested in the pilot, not in self-test, because it spe
 | Risk | Mitigation |
 |---|---|
 | OIDC token exchange fails inside a cross-repo reusable workflow | Rollout step 2 tests it first |
-| Prompt injection through issue text | F13 tools; no `.github/` edits (F14); draft PRs; branch protection |
+| Prompt injection through issue text | F17 author gate and comment strip; F13 tools (no code runs in issue runs); F14 enforced in `fix-publish.sh`; draft PRs; branch protection |
+| CI and Vercel run Claude-written code with repo secrets before review | Accepted for collaborator-authored issues and PR runs (trusted input). Untrusted input waits for F18. |
+| Claude reads the App token from `.git/config` | Issue runs have no network tool and no shell; the token is revoked when the fix step ends |
 | The App's Workflows write lets a hijacked run change CI | Branch protection; draft-only output; human review of every diff |
 | Usage limits drain | F9 caps; auto off by default; two-week review |
 | Stale `owner:local` after a crash | Manual `claude-fix` overrides (F5) |
@@ -213,6 +218,6 @@ A full `claude-fix` run is tested in the pilot, not in self-test, because it spe
 
 ## Follow-ups
 
-1. Backlog picker for #617: claims issues with `owner:*` labels.
+1. Backlog picker for #617: claims issues with `owner:*` labels. Needs F18 first, because visitor issues fail the F17 gate.
 2. Helper script for the cloud hand-off (flow 3c).
 3. Routines, when a CI-failure trigger or a documented workflow fire exists.

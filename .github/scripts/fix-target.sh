@@ -15,6 +15,12 @@ case $1 in
   issues)
     [ "$(get .issue.state)" = open ] || skip "issue is closed"
     n=$(get .issue.number)
+    # Issue text is the task, so only collaborators' issues run. A refusal
+    # keeps the number so the workflow can say why on the issue.
+    case $(get .issue.author_association) in
+      OWNER | MEMBER | COLLABORATOR) ;;
+      *) printf 'skip=the issue author is not a collaborator (%s)\nnumber=%s\n' "$(get .issue.author_association)" "$n"; exit 0 ;;
+    esac
     printf 'kind=issue\nnumber=%s\nbranch=claude/issue-%s-%s\nbase=%s\n' \
       "$n" "$n" "$GITHUB_RUN_ID" "$(get .repository.default_branch)" ;;
   pull_request)

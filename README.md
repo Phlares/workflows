@@ -138,7 +138,12 @@ Rules:
 - Auto fix: uncomment `workflow_run` and list the CI workflow by its `name:`.
   It skips non-PR runs, forks, PRs with an `owner:*` label, commits pushed
   by `claude[bot]`, and commits it already tried (status `claude-fix/auto`).
-- A run never changes `.github/`.
+- Issue runs take only issues written by collaborators (`OWNER`, `MEMBER`,
+  `COLLABORATOR`). Other issues get a "Not run" comment. HTML comments in the
+  issue body are removed before Claude reads it: they do not render, so the
+  person who added the label never saw them.
+- A run never changes `.github/`. The publish step also refuses unknown
+  `.git/config` keys and an `origin` that is not this repo.
 - Cloud hand-off: run `/autofix-pr` on the PR branch, then
   `gh pr edit <n> --add-label owner:cloud --remove-label owner:local`.
 

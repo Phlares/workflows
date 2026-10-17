@@ -11,6 +11,9 @@ report() { # env assignments for this case as arguments
 }
 said() { grep -qF "$1" "$FAKE_GH_LOG" || { echo "     log: $(cat "$FAKE_GH_LOG")"; return 1; }; }
 
+report SKIP='the issue author is not a collaborator (NONE)' OUTCOME= EXEC_FILE=
+check "refused run: says why" said "Not run: the issue author is not a collaborator (NONE)."
+
 report EMPTY=true EXEC_FILE=
 check "no failures: says so" said "No failed CI runs found on abc"
 

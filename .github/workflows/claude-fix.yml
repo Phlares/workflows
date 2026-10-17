@@ -108,7 +108,7 @@ jobs:
           SHA: ${{ steps.target.outputs.sha }}
         run: |
           if [ "$KIND" = issue ]; then
-            jq -r '"# " + .issue.title + "\n\n" + (.issue.body // "")' "$GITHUB_EVENT_PATH" > "$FIX_DIR/task/issue.md"
+            bash .wf/.github/scripts/fix-issue.sh "$GITHUB_EVENT_PATH" > "$FIX_DIR/task/issue.md"
             exit 0
           fi
           # A failed claude-fix run on the same commit is not CI.
@@ -173,6 +173,7 @@ jobs:
           REPO: ${{ github.repository }}
           NUMBER: ${{ steps.target.outputs.number }}
           SHA: ${{ steps.target.outputs.sha }}
+          SKIP: ${{ steps.target.outputs.skip }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           EMPTY: ${{ steps.collect.outputs.empty }}
           OUTCOME: ${{ steps.fix.outcome }}

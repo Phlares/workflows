@@ -16,10 +16,20 @@ open_pr() { respond 'api repos/o/r/pulls/7*' '{"head":{"sha":"abc"}}'; }
 no_owner() { respond 'api repos/o/r/issues/7/labels*' '[{"name":"bug"}]'; }
 no_marker() { respond 'api repos/o/r/commits/abc/statuses*' '[{"context":"ci","state":"failure"}]'; }
 
-run issues "{$repo,\"issue\":{\"number\":5,\"state\":\"open\"}}"
+run issues "{$repo,\"issue\":{\"number\":5,\"state\":\"open\",\"author_association\":\"OWNER\"}}"
 check "issue: fresh branch off the default branch" is $'kind=issue\nnumber=5\nbranch=claude/issue-5-777\nbase=main'
 
-run issues "{$repo,\"issue\":{\"number\":5,\"state\":\"closed\"}}"
+for a in MEMBER COLLABORATOR; do
+  run issues "{$repo,\"issue\":{\"number\":5,\"state\":\"open\",\"author_association\":\"$a\"}}"
+  check "issue: $a author is trusted" is $'kind=issue\nnumber=5\nbranch=claude/issue-5-777\nbase=main'
+done
+
+for a in CONTRIBUTOR FIRST_TIME_CONTRIBUTOR NONE; do
+  run issues "{$repo,\"issue\":{\"number\":5,\"state\":\"open\",\"author_association\":\"$a\"}}"
+  check "issue: $a author is refused, with the number for a comment" is $'skip=the issue author is not a collaborator ('"$a"$')\nnumber=5'
+done
+
+run issues "{$repo,\"issue\":{\"number\":5,\"state\":\"closed\",\"author_association\":\"OWNER\"}}"
 check "issue: closed is skipped" is "skip=issue is closed"
 
 run pull_request "{$repo,\"pull_request\":{\"number\":7,\"state\":\"open\",\"head\":{\"ref\":\"feat\",\"sha\":\"abc\"}}}"

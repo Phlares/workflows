@@ -5,7 +5,9 @@ set -euo pipefail
 GH=${GH:-gh}
 published=$(cat "$FIX_DIR/published" 2>/dev/null || true)
 summary=$(jq -r '.summary // empty' <<<"${RESULT:-}" 2>/dev/null || true)
-if [ "${EMPTY:-}" = true ]; then
+if [ -n "${SKIP:-}" ]; then
+  head="Not run: $SKIP."
+elif [ "${EMPTY:-}" = true ]; then
   head="No failed CI runs found on $SHA. Add the label again after CI fails."
 elif [ -n "$published" ]; then
   head="Fix pushed: $published"
