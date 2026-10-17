@@ -52,8 +52,7 @@ jobs:
           path: .wf
           persist-credentials: false
           sparse-checkout: |
-            /.github/actions/
-            /.github/scripts/
+            /
           sparse-checkout-cone-mode: false
       - run: echo /.wf/ >> .git/info/exclude
       - uses: ./.wf/.github/actions/setup
