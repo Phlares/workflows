@@ -8,7 +8,7 @@
 
 **Tech Stack:** GitHub Actions (reusable workflows, composite actions), bash, jq, unzip, gh, `anthropics/claude-code-action` v1.0.252, actionlint 1.7.12, shellcheck (preinstalled on `ubuntu-latest`).
 
-**Spec:** `C:\Users\Ryon\Documents\dev\workflows\docs\specs\2026-10-15-part3b-claude-fix-design.md` (decisions F1-F16). Read it with this plan. Shared rules: `docs/handoff-2026-10-16-plans.md`.
+**Spec:** `C:\Users\Ryon\Documents\dev\workflows\docs\specs\2026-10-15-part3b-claude-fix-design.md` (decisions F1-F16). Read it with this plan. Shared rules: `.cache/handoffs/handoff-2026-10-16-plans.md` (gitignored, session-local).
 
 ## Global Constraints
 
