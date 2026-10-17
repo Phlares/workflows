@@ -9,7 +9,7 @@ publish and deploy jobs stay in each repo.
 ```yaml
 jobs:
   test:
-    uses: Phlares/workflows/.github/workflows/check.yml@<full sha> # v1.1.0
+    uses: Phlares/workflows/.github/workflows/check.yml@<full sha> # v1.1.1
     with:
       node-version: "24"
       install: npm ci
@@ -100,7 +100,7 @@ permissions: { contents: write, pull-requests: write, issues: write, actions: re
 jobs:
   fix:
     if: github.event.label.name == 'claude-fix' || github.event.workflow_run.conclusion == 'failure'
-    uses: Phlares/workflows/.github/workflows/claude-fix.yml@<full sha> # v1.1.0
+    uses: Phlares/workflows/.github/workflows/claude-fix.yml@<full sha> # v1.1.1
     with:
       node-version: "24"
       install: npm ci
@@ -134,7 +134,9 @@ Rules:
   runs code, so injected issue text cannot run with the App token. Claude may
   call it only with test names; CI runs the full suite after the push.
 - The caller file must be on the default branch before labels work: the
-  token exchange compares it with the default branch.
+  token exchange compares it with the default branch. After a caller change,
+  a PR opened before it needs the default branch merged in; until then its
+  runs skip with "Claude did not run".
 - Auto fix: uncomment `workflow_run` and list the CI workflow by its `name:`.
   It skips non-PR runs, forks, PRs with an `owner:*` label, commits pushed
   by `claude[bot]`, and commits it already tried (status `claude-fix/auto`).
