@@ -55,7 +55,6 @@ jobs:
             /.github/actions/
             /.github/scripts/
           sparse-checkout-cone-mode: false
-      - run: echo /.wf/ >> .git/info/exclude
       - uses: ./.wf/.github/actions/setup
         with:
           node-version: ${{ inputs.node-version }}
