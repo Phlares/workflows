@@ -1,6 +1,7 @@
 # workflows
 
-One reusable GitHub Actions job for checks: lint, typecheck, tests. Release,
+Reusable GitHub Actions jobs: `check.yml` for checks (lint, typecheck,
+tests) and `claude-fix.yml` for one Claude fix run per issue or PR. Release,
 publish and deploy jobs stay in each repo.
 
 ## Use
@@ -8,7 +9,7 @@ publish and deploy jobs stay in each repo.
 ```yaml
 jobs:
   test:
-    uses: Phlares/workflows/.github/workflows/check.yml@<full sha> # v1.0.0
+    uses: Phlares/workflows/.github/workflows/check.yml@<full sha> # v1.1.0
     with:
       node-version: "24"
       install: npm ci
@@ -81,6 +82,67 @@ The job writes a summary, one `::error` annotation, and an artifact
 commit, run URL, job, shard, failing step (`setup`, `install` or `run`) and the
 last 40 log lines with colour codes removed. A timeout counts as a failure of
 the step that ran out of time.
+
+## claude-fix
+
+One fix run per request. Adding the `claude-fix` label to an issue or PR
+starts it; it ends in a draft PR (issue) or one commit on the PR branch (PR).
+Nothing merges and nothing is pushed to the default branch.
+
+```yaml
+name: claude-fix
+on:
+  issues: { types: [labeled] }
+  pull_request: { types: [labeled] }
+  # Auto fix (opt-in): uncomment.
+  # workflow_run: { workflows: [CI], types: [completed] }
+permissions: { contents: write, pull-requests: write, issues: write, actions: read, statuses: write, id-token: write }
+jobs:
+  fix:
+    if: github.event.label.name == 'claude-fix' || github.event.workflow_run.conclusion == 'failure'
+    uses: Phlares/workflows/.github/workflows/claude-fix.yml@<full sha> # v1.1.0
+    with:
+      node-version: "24"
+      install: npm ci
+      test-command: npx vitest run
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+```
+
+Setup per repo: install the Claude GitHub App, add the
+`CLAUDE_CODE_OAUTH_TOKEN` secret (from `claude setup-token`), and create the
+four labels below.
+
+| Input | Default | Meaning |
+|---|---|---|
+| `model` | `opus` | Model alias |
+| `max-turns` | `50` | Turn limit for one run |
+| `timeout-minutes` | `20` | Limit for the fix step and for `install` |
+| `runs-on` | `ubuntu-latest` | Runner label |
+| `node-version`, `python-version`, `zig-version`, `working-directory`, `install`, `env` | as `check.yml` | Setup before tests |
+| `test-command` | empty | Command Claude may run with specific test names. Empty = no setup and no tests in the fix job |
+
+| Label | Meaning |
+|---|---|
+| `claude-fix` | Request one run. The run removes it; add it again to retry |
+| `owner:local` | A local session owns fixes (set when it opens the PR) |
+| `owner:cloud` | A cloud session owns fixes |
+| `owner:action` | A `claude-fix` run is working |
+
+Rules:
+- `test-command` runs from the repo root. Claude may call it only with test
+  names; CI runs the full suite after the push.
+- The caller file must be on the default branch before labels work: the
+  token exchange compares it with the default branch.
+- Auto fix: uncomment `workflow_run` and list the CI workflow by its `name:`.
+  It skips non-PR runs, forks, PRs with an `owner:*` label, commits pushed
+  by `claude[bot]`, and commits it already tried (status `claude-fix/auto`).
+- A run never changes `.github/`.
+- Cloud hand-off: run `/autofix-pr` on the PR branch, then
+  `gh pr edit <n> --add-label owner:cloud --remove-label owner:local`.
+
+Both workflows fetch this repo into `.wf/` at the called commit. It holds
+only `.github/actions/` and `.github/scripts/`, and git ignores it.
 
 ## Versioning
 
