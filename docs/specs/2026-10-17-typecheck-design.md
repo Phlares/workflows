@@ -34,7 +34,7 @@ Most findings are not bugs. In flashback about 160 are PySide6 enum shorthand (`
 | T7 | VoxGarbler: `typecheck` job in `py-ci.yml`, not required | Same deps and path filter as `pytest`. A path-filtered check cannot be required (Part 2). Owner chose it 2026-10-17. |
 | T8 | VoxGarbler sets `reportMissingImports = "warning"` | CI installs `requirements-ci.txt` only; 63 imports of 20 heavy modules (torch, transformers, whisperx) do not resolve there. pyright exits 0 on warnings, so the gate holds and the log keeps the list. A local run with the full venv still shows a typo as a warning. |
 | T9 | Fix pass follows Part 2 rules: fix the code, never weaken the rule set; at most 10 inline suppressions per repo, each with a reason, listed in the PR body | Owner chose it 2026-10-17. The guide below covers the finding classes measured. |
-| T10 | pyright version is a manual pin, like prek | Dependabot's pip ecosystem does not read a workflow file. A pinned version means a pyright release never turns an unrelated PR red. |
+| T10 | pyright is pinned by hash through the `.in` → `uv pip compile --generate-hashes` → `pip install --require-hashes` chain that PRs flashback #103 and VoxGarbler #77 (workflows #11) add for prek and the test set. This work lands after those PRs. | One pin mechanism per repo. Dependabot's `uv` entry (`lockfile-only`) bumps pyright monthly in a grouped PR; new errors fail `typecheck` in that PR, never on an unrelated one. |
 
 ## Tier
 
@@ -93,7 +93,18 @@ reportMissingImports = "warning"
 
 No `include`: pyright scans every `.py` under the repo root, so a new folder is checked without a config change. No `venv` setting: local runs use the activated venv's `python`, CI runs use the runner's.
 
-Local run: `pip install pyright==<ver>` into the repo venv once, then `pyright` from the repo root. The version is the one in the caller file.
+Local run: `pip install pyright==<ver>` into the repo venv once, then `pyright` from the repo root. The version is the one in the lock file.
+
+## Pin
+
+After #103 and #77, each repo pins CI tools through `requirements-<job>.in` → `uv pip compile --generate-hashes --universal --python-version 3.12` → `requirements-<job>.txt` → `pip install --require-hashes`. Dependabot's `uv` entry moves the lock. pyright joins that chain:
+
+| Repo | `.in` file | Why |
+|---|---|---|
+| flashback-sampler | new `requirements-typecheck.in` holding `pyright==1.1.414`; lock `requirements-typecheck.txt` | The runtime deps come from `pip install -e ".[dev]"`, unhashed, as in `pytest`. The lint lock stays prek-only so the `lint` job does not install pyright. |
+| VoxGarbler | `pyright==1.1.414` added to `requirements-ci.in`; the existing lock is recompiled | `typecheck` needs the same light set as `pytest`. One lock for one environment. `pytest` installs pyright too (about 10 MB; it is not imported). |
+
+The `.in` line pins an exact version; the lock adds hashes. A bump edits the `.in` or arrives from Dependabot.
 
 ## CI `typecheck` job
 
@@ -107,8 +118,11 @@ flashback `test.yml`:
       name: typecheck
       python-version: "3.12"
       timeout-minutes: 5
-      # The pyright version is a manual bump: Dependabot does not read it.
-      install: pip install -e ".[dev]" pyright==1.1.414
+      # pyright is pinned by hash in requirements-typecheck.txt (compiled from
+      # requirements-typecheck.in); Dependabot moves both files.
+      install: |
+        pip install --require-hashes -r requirements-typecheck.txt
+        pip install -e ".[dev]"
       run: pyright
 ```
 
@@ -120,9 +134,8 @@ VoxGarbler `py-ci.yml`:
       name: typecheck
       python-version: "3.12"
       timeout-minutes: 5
-      # The pyright version is a manual bump: Dependabot does not read it.
       install: |
-        pip install -r requirements-ci.txt pyright==1.1.414
+        pip install --require-hashes -r requirements-ci.txt
         pip install --no-deps -e .
       run: pyright
 ```
@@ -130,6 +143,7 @@ VoxGarbler `py-ci.yml`:
 - `[dev]` (flashback) and `requirements-ci.txt` (VoxGarbler) bring pytest, so `tests/` resolves.
 - `pip install -e .` in flashback needs no Zig: the package has no build step; the DLL loads at runtime.
 - The pip `pyright` package wraps the npm package of the same version and uses the runner's Node.
+- A `--require-hashes` install refuses any extra unhashed requirement on the same line, so pyright never goes in the `install` line by name.
 - pyright exits 1 on any error and 0 on warnings only, so `check.yml` reports a failure of step `run` with the normal `report.json`.
 - Cost: about 1 min of pip install (PySide6 or the light ML set) plus 4-20 s of analysis.
 
@@ -142,9 +156,9 @@ Placement and gate per repo:
 
 ## Fix pass
 
-One PR per repo, branch from the default branch (`dev` for flashback, `master` for VoxGarbler). Commits, in order; the full suite passes with equal test counts after each:
+One PR per repo. The branch is cut from `origin/ci/pin-hashes` (#103, #77) while those are open, as Part 2 cut `ci/lint` from `ci/py-ci`; after they merge, merge the default branch in, never rebase. Commits, in order; the full suite passes with equal test counts after each:
 
-1. **Config and job.** `[tool.pyright]` plus the `typecheck` job. CI goes red here; this is the gate's proof. Record the error count from the CI log.
+1. **Config, pin and job.** `[tool.pyright]`, the `.in` and lock change, and the `typecheck` job. CI goes red here; this is the gate's proof. Record the error count from the CI log.
 2. **Mechanical fixes.** flashback: enum long forms. VoxGarbler: the `blind_ab.py` inference fix and the `dict[Pos, ...]` annotations. Each is a find-and-replace or a one-line annotation with no behaviour change.
 3. **Manual fixes.** Everything else, by the guide below. Behaviour-changing fixes (a real `None` path) each get a test that pins the fix and a line in the PR body.
 4. Repeat 3 until `pyright` exits 0 locally against the full venv, and CI is green.
@@ -174,11 +188,11 @@ Mutation check: with CI green, push one commit that adds a call with a wrong arg
 1. flashback-sampler: config, job, fix pass. Larger count but mostly mechanical; proves the pattern.
 2. VoxGarbler: config, job, fix pass.
 
-The two repos are independent and can run in parallel sessions. Open PRs flashback #102 and VoxGarbler #76 (claude-fix callers) add `claude-fix.yml`; this work edits `test.yml` and `py-ci.yml`, so no conflict.
+The two repos are independent and can run in parallel sessions. Open PRs flashback #102 and VoxGarbler #76 (claude-fix callers) add `claude-fix.yml`; this work edits `test.yml` and `py-ci.yml`, so no conflict. flashback #103 and VoxGarbler #77 (pin-hashes) edit the same caller files and locks; this work builds on them (Fix pass).
 
 ## Owner steps
 
-- Merge each PR.
+- Merge #103 and #77 first, then each typecheck PR.
 - Required check: flashback `typecheck / typecheck (1)` on `main` and `dev`. Session rules blocked the rulesets API this session.
 
 ## Risks
@@ -188,7 +202,7 @@ The two repos are independent and can run in parallel sessions. Open PRs flashba
 | A PySide6 release changes its stubs and turns `typecheck` red on an unrelated PR (PySide6 is `>=6.7`, unpinned) | Same exposure as `pytest` today (6.12 exit crash, #93). Fix in a cap PR; the lockfile follow-up (#11) removes it. |
 | A manual fix changes behaviour | Mechanical and manual commits are separate; equal test counts after each; behaviour fixes get a pinning test. |
 | VoxGarbler CI misses an error that the full venv shows (16 today) | The fix pass runs against the full venv. Local `pyright` before push is the developer's check. |
-| pyright pin goes stale | Follow-up: a `requirements-typecheck.txt` read by Dependabot's pip ecosystem, scoped to pyright, once #14 confirms Dependabot keeps SHA pins. |
+| A Dependabot pyright bump adds errors | The grouped `uv` PR runs `typecheck` and fails; fix in that PR, as for a ruff bump. |
 | 404 fixes conflict with open flashback branches | Land when few branches are open. Enum rewrites touch many lines; `.git-blame-ignore-revs` lists the mechanical commit. |
 
 ## Non-goals
@@ -201,6 +215,5 @@ The two repos are independent and can run in parallel sessions. Open PRs flashba
 
 ## Follow-ups
 
-1. Dependabot-driven pyright bumps (see Risks).
-2. Copier template (#13) gains the `[tool.pyright]` block per tier.
-3. Strict mode for the infra/science tier when such a repo adopts CI.
+1. Copier template (#13) gains the `[tool.pyright]` block and the `.in` file per tier.
+2. Strict mode for the infra/science tier when such a repo adopts CI.
