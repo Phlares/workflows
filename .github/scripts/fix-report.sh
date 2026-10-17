@@ -18,14 +18,15 @@ elif [ "$OUTCOME" = success ]; then
 else
   head="The fix run ended without a fix ($OUTCOME)."
 fi
-body=$head
-[ -z "$summary" ] || body+=$'\n\n'"$summary"
-body+=$'\n\n'"[Run log]($RUN_URL)"
-"$GH" api "repos/$REPO/issues/$NUMBER/comments" -f body="$body" --silent
+stats=""
 if [ -s "${EXEC_FILE:-}" ]; then
-  jq -r '[.[] | select(.type == "result")][-1]
+  stats=$(jq -r '[.[] | select(.type == "result")][-1]
     | (.permission_denials // [] | map(.tool_name) | unique | join(", ")) as $tools
     | "claude-fix: \(.num_turns) turns, \(.duration_ms / 1000 | floor) s, \(.permission_denials // [] | length) denied tool calls"
-      + (if $tools == "" then "" else " (\($tools))" end)' \
-    "$EXEC_FILE" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+      + (if $tools == "" then "" else " (\($tools))" end)' "$EXEC_FILE")
+  echo "$stats" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
 fi
+body=$head
+[ -z "$summary" ] || body+=$'\n\n'"$summary"
+body+=$'\n\n'"[Run log]($RUN_URL)${stats:+ · $stats}"
+"$GH" api "repos/$REPO/issues/$NUMBER/comments" -f body="$body" --silent
