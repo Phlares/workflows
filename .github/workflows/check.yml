@@ -42,41 +42,27 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - if: inputs.node-version != ''
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      # A called workflow resolves ./ against the caller's repo, so fetch this
+      # repo at the called commit. Sparse: callers' test globs must not see
+      # fixtures. After the caller checkout: checkout empties its target.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Phlares/workflows
+          ref: ${{ job.workflow_sha }}
+          path: .wf
+          persist-credentials: false
+          sparse-checkout: |
+            /.github/actions/
+            /.github/scripts/
+          sparse-checkout-cone-mode: false
+      - run: echo /.wf/ >> .git/info/exclude
+      - uses: ./.wf/.github/actions/setup
         with:
           node-version: ${{ inputs.node-version }}
-          cache: npm
-          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
-      - if: inputs.python-version != ''
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
           python-version: ${{ inputs.python-version }}
-          cache: pip
-          cache-dependency-path: |
-            ${{ inputs.working-directory }}/pyproject.toml
-            ${{ inputs.working-directory }}/requirements*.txt
-      - if: inputs.zig-version != ''
-        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
-        with:
-          version: ${{ inputs.zig-version }}
-      # Not $GITHUB_ENV: the runner refuses NODE_OPTIONS there.
-      - name: env
-        env:
-          INPUT_ENV: ${{ inputs.env }}
-        run: |
-          while IFS= read -r line || [ -n "$line" ]; do
-            line=${line%$'\r'}
-            case $line in
-              *[![:space:]]*) ;;
-              *) continue ;;
-            esac
-            case $line in
-              '#'*) ;;
-              [A-Za-z_]*=*) printf 'export %q\n' "$line" ;;
-              *) echo "env input: not KEY=VALUE: $line" | tee -a "$RUNNER_TEMP/run.log" >&2; exit 1 ;;
-            esac
-          done <<<"$INPUT_ENV" > "$RUNNER_TEMP/env.sh"
+          zig-version: ${{ inputs.zig-version }}
+          working-directory: ${{ inputs.working-directory }}
+          env: ${{ inputs.env }}
       # Step-level limits: a job-level timeout cancels the job, and a
       # cancelled job skips the failure report.
       - name: install
