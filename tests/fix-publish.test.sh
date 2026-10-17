@@ -48,7 +48,16 @@ check "git hooks in the work tree do not run" test "$code" -eq 0 -a ! -e "$d/hoo
 
 setup pr feat; echo b > a.txt; git config url."https://evil.example/".insteadOf "$d/remote.git"
 pub "fix: thing"
-check "a URL rewrite in .git/config is refused" grep -q 'refused: .git/config rewrites URLs' <<<"$out"
+check "a URL rewrite in .git/config is refused" grep -q 'unexpected .git/config keys: url\.' <<<"$out"
+
+setup pr feat; echo b > a.txt; git config credential.helper '!touch "'"$d"'/helper-ran"; echo'
+pub "fix: thing"
+check "a credential helper in .git/config is refused before it runs" test "$code" -ne 0 -a ! -e "$d/helper-ran"
+
+setup pr feat; echo b > a.txt; echo '* filter=x' > .gitattributes
+printf '[filter "x"]\n\tclean = touch %s/filter-ran; cat\n' "$d" > "$d/evil.cfg"; git config include.path "$d/evil.cfg"
+pub "fix: thing"
+check "keys pulled in through include.path are checked" test "$code" -ne 0 -a ! -e "$d/filter-ran"
 
 setup pr feat
 pub "fix: thing"

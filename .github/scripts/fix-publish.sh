@@ -14,8 +14,12 @@ git() { command git -c core.hooksPath=/dev/null -c core.fsmonitor=false "$@"; }
 [ -n "${1:-}" ] || die 'usage: fix-publish.sh "<commit subject>"'
 [ ! -e "$dir/published" ] || die "already published: $(cat "$dir/published")"
 cd "$FIX_REPO"
-# A URL rewrite would send the push, and the token, to another host.
-! git config --get-regexp '^url\.' >/dev/null || die "refused: .git/config rewrites URLs"
+# Claude can write .git/config. Allow only the keys actions/checkout and
+# claude-code-action set: credential.helper, core.sshCommand, filter.*,
+# url.* and the like can run commands or send the push elsewhere.
+allowed='^(core\.(repositoryformatversion|filemode|bare|logallrefupdates|ignorecase|precomposeunicode|symlinks)|remote\.origin\.(url|fetch)|branch\..+\.(remote|merge)|user\.(name|email)|gc\.auto|include\.path|includeif\..+\.path|extensions\.[a-z]+)$'
+bad=$(git config --local --includes --name-only --list | grep -viE "$allowed" || true)
+[ -z "$bad" ] || die "refused: unexpected .git/config keys: $(tr '\n' ' ' <<<"$bad")"
 git add -A
 git diff --cached --quiet || git commit -q -m "$1"
 ! git diff --quiet "$FIX_START" HEAD || die "no changes to publish"
