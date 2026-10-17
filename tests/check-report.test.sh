@@ -14,7 +14,7 @@ report() { # $1 run.log text, $2 step (empty = no step file), rest = env assignm
 json() { jq -e "$1" "$RUNNER_TEMP/report/report.json" > /dev/null; }
 annotation() { grep -qxF "$1" "$tmp/stdout" || { echo "     stdout: $(cat "$tmp/stdout")"; return 1; }; }
 
-{ for i in $(seq 1 50); do echo "line $i"; done; printf '\033[31mError: boom\033[0m\n```\n  at x\n}\n'; } > "$tmp/log"
+{ for i in $(seq 1 50); do echo "line $i"; done; printf '\033[31mError: boom\033[0m\n```\n  at x\n1 test failed\n}\n'; } > "$tmp/log"
 report "$(cat "$tmp/log")" run
 check "report: schema 1 fields" json '.schema == 1 and .repo == "o/r" and .pr == 7 and .sha == env.SHA and .run_url == env.RUN_URL and .job == "unit" and .step == "run"'
 check "report: numeric shard stays a number" json '.shard == 2 and .shard_total == 3'
