@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck source=lib.sh
 . "$(dirname "$0")/lib.sh"
 script="$root/.github/scripts/fix-target.sh"
 run() { # $1 event name, $2 event JSON; sets out

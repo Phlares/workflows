@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck source=lib.sh
 . "$(dirname "$0")/lib.sh"
 script="$root/.github/scripts/fix-report.sh"
 export REPO=o/r NUMBER=7 SHA=abc RUN_URL=https://github.com/o/r/actions/runs/1 FIX_DIR="$tmp/fix" GITHUB_STEP_SUMMARY="$tmp/summary"

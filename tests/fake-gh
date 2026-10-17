@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Fake gh for script tests. Rules in $FAKE_GH_RULES, one per line:
 #   <glob over "$*"><TAB><exit code><TAB><response file, or ->
-# First match wins. --jq/-q filters the response as real gh does.
+# First match wins. --jq/-q filters the response as real gh does, and like
+# real gh it refuses output with escape codes unless --allow-escape-sequences.
 args="$*"
 echo "$args" >> "$FAKE_GH_LOG"
 filter=""
@@ -13,6 +14,10 @@ while IFS=$'\t' read -r glob code file; do
   # shellcheck disable=SC2053 # the rule is a glob on purpose
   [[ $args == $glob ]] || continue
   if [ "$file" != - ]; then
+    if [[ $args != *--allow-escape-sequences* ]] && grep -q $'\x1b' "$file"; then
+      echo "the response contains terminal escape sequences; pass --allow-escape-sequences to output it anyway" >&2
+      exit 1
+    fi
     # jq on Windows writes CRLF; gh --jq writes LF everywhere.
     if [ -n "$filter" ]; then jq -r "$filter" "$file" | tr -d '\r'; else cat "$file"; fi
   fi

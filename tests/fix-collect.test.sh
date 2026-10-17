@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck source=lib.sh
 . "$(dirname "$0")/lib.sh"
 script="$root/.github/scripts/fix-collect.sh"
 out="$tmp/out"
@@ -10,7 +11,7 @@ respond 'api repos/o/r/actions/runs/11/jobs*' '{"jobs":[
 rule 'api repos/o/r/actions/artifacts/91/zip' 0 "$root/tests/fixtures/report.zip"
 rule 'api repos/o/r/actions/artifacts/92/zip' 0 "$root/tests/fixtures/report.zip"
 { for i in $(seq 1 250); do printf 'line %s\n' "$i"; done; printf '\033[31mboom\033[0m\n'; } > "$tmp/log3"
-rule 'api repos/o/r/actions/jobs/3/logs' 0 "$tmp/log3"
+rule 'api *repos/o/r/actions/jobs/3/logs' 0 "$tmp/log3"
 
 bash "$script" o/r "$out" 11 > "$tmp/stdout" 2>&1; code=$?
 check "exits 0" test "$code" -eq 0

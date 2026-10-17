@@ -22,7 +22,7 @@ for run in "$@"; do
       "$GH" api "repos/$repo/actions/artifacts/$art_id/zip" > "$zip"
       unzip -o -q "$zip" -d "$out/$art"
     else
-      { echo "# $name"; "$GH" api "repos/$repo/actions/jobs/$id/logs" | sed -E 's/\x1b\[[0-9;?]*[A-Za-z]//g' | tail -n 200; } > "$out/log-$id.txt"
+      { echo "# $name"; "$GH" api --allow-escape-sequences "repos/$repo/actions/jobs/$id/logs" | sed -E 's/\x1b\[[0-9;?]*[A-Za-z]//g' | tail -n 200; } > "$out/log-$id.txt"
     fi
   done <<<"$jobs"
 done

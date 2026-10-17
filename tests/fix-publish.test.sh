@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck source=lib.sh
 . "$(dirname "$0")/lib.sh"
 script="$root/.github/scripts/fix-publish.sh"
 ncase=0
