@@ -9,7 +9,7 @@ publish and deploy jobs stay in each repo.
 ```yaml
 jobs:
   test:
-    uses: Phlares/workflows/.github/workflows/check.yml@<full sha> # v1.1.1
+    uses: Phlares/workflows/.github/workflows/check.yml@<full sha> # v1.4.0
     with:
       node-version: "24"
       install: npm ci
@@ -109,7 +109,7 @@ permissions: { contents: write, pull-requests: write, issues: write, actions: re
 jobs:
   fix:
     if: github.event.label.name == 'claude-fix' || github.event.workflow_run.conclusion == 'failure'
-    uses: Phlares/workflows/.github/workflows/claude-fix.yml@<full sha> # v1.1.1
+    uses: Phlares/workflows/.github/workflows/claude-fix.yml@<full sha> # v1.4.0
     with:
       node-version: "24"
       install: npm ci

@@ -1,6 +1,6 @@
 # Part 3b: CI-fix routing and the `claude-fix` workflow — design
 
-Date: 2026-10-15. Status: approved; revised 2026-10-17 after review (F13, F14, F17, F18; flow 3a; risks) and for v1.2.0 (F13, F17, flow 3b marker); revised for v1.x (F7, F18, flows 3a and 4: bounded auto retry, #22; commit author, #19).
+Date: 2026-10-15. Status: approved; revised 2026-10-17 after review (F13, F14, F17, F18; flow 3a; risks) and for v1.2.0 (F13, F17, flow 3b marker); revised for v1.4.0 (F7, F18, flows 3a and 4: bounded auto retry, #22; commit author, #19).
 Builds on: `2026-10-12-shared-ci-workflows-design.md` (v1, D1-D9) and `2026-10-15-part2-lint-design.md`.
 Consumer: portfolio epic #617 (PostHog finding, then issue, then fix PR).
 
@@ -48,7 +48,7 @@ The Claude GitHub App connects them. It gives the Action its push identity (`cla
 | F15 | When no clear fix exists, the run posts a comment with its findings and stops | A wrong fix costs more review time than a note. |
 | F16 | Routines: a watch item only | Research preview. No CI-failure trigger. Revisit when one ships, or when an HTTP fire from a workflow is documented. |
 | F17 | Trust follows the author of the text Claude reads. Issue runs take only issues whose author is `OWNER`, `MEMBER` or `COLLABORATOR`; other issues get a "Not run" comment. The same rule decides whether a PR run may run code (F13). HTML comments are removed from the issue body. | The label shows a maintainer read the issue, but CI and Vercel run whatever the fix pushes, before review. Until there is a gated lane (F18), untrusted text must not reach Claude. Comments do not render, so the labeller never saw them. |
-| F18 | Untrusted authors (#617 visitor issues) get a second lane later: the fix pushes with `GITHUB_TOKEN`, so its PR CI waits for "Approve and run workflows". Not built in v1.1.0. | The model GitHub uses for its Copilot coding agent. Open items: the "Allow GitHub Actions to create pull requests" setting, Vercel previews (they build every pushed branch, and repo config cannot block them), a live check of the hold, and the F13 exemption for `github-actions[bot]` commits: that lane pushes visitor-shaped code as that account, so the exemption goes when it lands. Since v1.x (#19) claude-fix commits carry `claude[bot]` as author, so only older fix commits need it. Required-reviewer environments are public-repo only on Pro. |
+| F18 | Untrusted authors (#617 visitor issues) get a second lane later: the fix pushes with `GITHUB_TOKEN`, so its PR CI waits for "Approve and run workflows". Not built in v1.1.0. | The model GitHub uses for its Copilot coding agent. Open items: the "Allow GitHub Actions to create pull requests" setting, Vercel previews (they build every pushed branch, and repo config cannot block them), a live check of the hold, and the F13 exemption for `github-actions[bot]` commits: that lane pushes visitor-shaped code as that account, so the exemption goes when it lands. Since v1.4.0 (#19) claude-fix commits carry `claude[bot]` as author, so only older fix commits need it. Required-reviewer environments are public-repo only on Pro. |
 
 ## Labels
 
