@@ -5,3 +5,4 @@ __pycache__/
 zig-out/
 .zig-cache/
 .superpowers/
+.cache/
