@@ -26,16 +26,16 @@ The check is named `<caller job> / <name> (<shard>)`, for example
 
 | Input | Default | Meaning |
 |---|---|---|
-| `name` | `check` | Job name and failure artifact prefix. Unique per caller workflow; no `/`, `:` or `\` |
+| `name` | `check` | Job name and failure artifact prefix. Unique per caller workflow: two jobs with one name overwrite each other's artifact |
 | `runs-on` | `ubuntu-latest` | Runner label |
-| `node-version` | empty | Empty = not installed. npm cache needs `<working-directory>/package-lock.json` |
-| `python-version` | empty | Empty = not installed. pip cache needs `pyproject.toml` or `requirements*.txt` in `<working-directory>` |
+| `node-version` | empty | Empty = not installed. npm cache needs `<working-directory>/package-lock.json`; without it the job fails in step `setup` |
+| `python-version` | empty | Empty = not installed. pip cache needs `pyproject.toml` or `requirements*.txt` in `<working-directory>`; without them the job fails in step `setup` |
 | `zig-version` | empty | Empty = not installed |
 | `working-directory` | `.` | Where `install` and `run` execute |
 | `install` | empty | Commands run before `run` |
 | `run` | required | Commands; stops at the first failure |
 | `env` | empty | `KEY=VALUE` lines exported for `install` and `run`. Blank and `#` lines are skipped. `NODE_OPTIONS` works |
-| `shards` | `[1]` | JSON array of integers; each shard gets `SHARD_INDEX` and `SHARD_TOTAL` |
+| `shards` | `[1]` | JSON array, usually integers; each shard gets `SHARD_INDEX` (the array value) and `SHARD_TOTAL` (the array length) |
 | `timeout-minutes` | `15` | Limit for `install` and for `run`, each |
 
 `PYTHONUNBUFFERED=1` is set by default so a killed test keeps its output.
@@ -82,6 +82,15 @@ The job writes a summary, one `::error` annotation, and an artifact
 commit, run URL, job, shard, failing step (`setup`, `install` or `run`) and the
 last 40 log lines with colour codes removed. A timeout counts as a failure of
 the step that ran out of time.
+
+- The annotation shows the first of those 40 lines with a failure word, else
+  the last line. A failure word is `error`, `exception`, `fail`, `assert` or
+  `panic` at the start of a word, or `error` or `exception` at the end of one
+  (`TypeError`), in any case. `pkg-fail` and `test_fail.py` do not count.
+- `shard` in `report.json` is a number when the shard value is an integer,
+  else a string.
+- In the artifact name, every character outside `A-Z a-z 0-9 . _ -` becomes
+  `-`: `name: "unit/py"` uploads `ci-failure-unit-py-1`.
 
 ## claude-fix
 

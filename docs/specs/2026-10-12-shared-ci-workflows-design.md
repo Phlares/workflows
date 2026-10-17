@@ -131,7 +131,7 @@ On failure of `install` or `run`, one step (`if: failure()`):
 
 Each caller keeps its triggers, path filters, `changes` job, `if:` conditions and `ci-pass`. Each caller PR adds `.github/dependabot.yml` with the `github-actions` ecosystem if missing (D7).
 
-**Required-check names change** to `<caller job> / <name>`. flashback-sampler requires `pytest (windows / py3.12)` and `zig (ubuntu)` on `main` and `dev` (per the `test.yml` header comment; the owner confirms in the UI, since session deny rules block reading protection); the owner renames them in the web UI when the PR merges. Portfolio requires only `ci-pass`; VoxGarbler has none.
+**Required-check names change** to `<caller job> / <name> (<shard>)`, `(1)` when unsharded. flashback-sampler requires `pytest (windows / py3.12)` and `zig (ubuntu)` on `main` and `dev` (per the `test.yml` header comment; the owner confirms in the UI, since session deny rules block reading protection); the owner renames them in the web UI when the PR merges. Portfolio requires only `ci-pass`; VoxGarbler has none.
 
 ## Portfolio equivalence check
 

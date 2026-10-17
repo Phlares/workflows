@@ -5,6 +5,7 @@
 # Usage: fix-collect.sh <owner/repo> <out dir> <run id>...
 set -euo pipefail
 GH=${GH:-gh}
+here=$(cd "$(dirname "$0")" && pwd)
 repo=$1 out=$2
 shift 2
 mkdir -p "$out"
@@ -14,9 +15,9 @@ for run in "$@"; do
   jobs=$("$GH" api "repos/$repo/actions/runs/$run/jobs?per_page=100" --jq '.jobs[] | select(.conclusion == "failure") | "\(.id)\t\(.name)"')
   while IFS=$'\t' read -r id name; do
     [ -n "$id" ] || continue
-    leaf=${name##* / } # check.yml jobs show as "<caller job> / <name> (<shard>)"
+    leaf=${name#* / } # check.yml jobs show as "<caller job> / <name> (<shard>)"
     art=""
-    if [[ $leaf =~ ^(.+)\ \(([0-9]+)\)$ ]]; then art="ci-failure-${BASH_REMATCH[1]}-${BASH_REMATCH[2]}"; fi
+    if [[ $leaf =~ ^(.+)\ \(([^()]+)\)$ ]]; then art=$(bash "$here/artifact-name.sh" "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"); fi
     art_id=$(awk -F'\t' -v n="$art" 'n != "" && $1 == n { print $2 }' <<<"$arts")
     if [ -n "$art_id" ]; then
       zip=$(mktemp)

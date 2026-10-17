@@ -3,19 +3,22 @@
 . "$(dirname "$0")/lib.sh"
 script="$root/.github/scripts/fix-collect.sh"
 out="$tmp/out"
-respond 'api repos/o/r/actions/runs/11/artifacts*' '{"artifacts":[{"id":91,"name":"ci-failure-unit-2"},{"id":92,"name":"ci-failure-unit-1"}]}'
+respond 'api repos/o/r/actions/runs/11/artifacts*' '{"artifacts":[{"id":91,"name":"ci-failure-unit-2"},{"id":92,"name":"ci-failure-unit-1"},{"id":93,"name":"ci-failure-x---y--z-a"}]}'
 respond 'api repos/o/r/actions/runs/11/jobs*' '{"jobs":[
   {"id":1,"name":"unit / unit (1)","conclusion":"success"},
   {"id":2,"name":"unit / unit (2)","conclusion":"failure"},
-  {"id":3,"name":"sim / smoke","conclusion":"failure"}]}'
+  {"id":3,"name":"sim / smoke","conclusion":"failure"},
+  {"id":4,"name":"odd / x / y: z (a)","conclusion":"failure"}]}'
 rule 'api repos/o/r/actions/artifacts/91/zip' 0 "$root/tests/fixtures/report.zip"
 rule 'api repos/o/r/actions/artifacts/92/zip' 0 "$root/tests/fixtures/report.zip"
+rule 'api repos/o/r/actions/artifacts/93/zip' 0 "$root/tests/fixtures/report.zip"
 { for i in $(seq 1 250); do printf 'line %s\n' "$i"; done; printf '\033[31mboom\033[0m\n'; } > "$tmp/log3"
 rule 'api *repos/o/r/actions/jobs/3/logs' 0 "$tmp/log3"
 
 bash "$script" o/r "$out" 11 > "$tmp/stdout" 2>&1; code=$?
 check "exits 0" test "$code" -eq 0
 check "check.yml job: report.json from its artifact" jq -e '.job == "unit" and .shard == 2' "$out/ci-failure-unit-2/report.json"
+check "name with ' / ' and ':', text shard: artifact found" test -f "$out/ci-failure-x---y--z-a/report.json"
 check "passing shard: nothing collected" test ! -e "$out/ci-failure-unit-1"
 check "job without a report: log tail" test "$(head -n 1 "$out/log-3.txt")" = "# sim / smoke"
 check "log tail: 200 lines plus the header" test "$(wc -l < "$out/log-3.txt")" -eq 201
