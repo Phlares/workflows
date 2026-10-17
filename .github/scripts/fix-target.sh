@@ -2,7 +2,7 @@
 # Picks what a claude-fix run works on, from the event that started it.
 # Prints KEY=VALUE lines for $GITHUB_OUTPUT, or skip=<reason>. For
 # workflow_run (auto fix) it applies the gate: PR runs only, not pushed by
-# claude[bot], PR head unchanged, no owner:* label, one try per commit.
+# a bot, PR head unchanged, no owner:* label, one try per commit.
 # Usage: fix-target.sh <event name> <event json file>
 set -euo pipefail
 GH=${GH:-gh}
@@ -25,7 +25,10 @@ case $1 in
     [ "$(get .workflow_run.conclusion)" = failure ] || skip "run did not fail"
     n=$(get '.workflow_run.pull_requests[0].number')
     [ -n "$n" ] || skip "not a PR run"
-    [ "$(get .workflow_run.actor.login)" != "claude[bot]" ] || skip "pushed by claude[bot]"
+    actor=$(get .workflow_run.actor.login)
+    [ "$actor" != "claude[bot]" ] || skip "pushed by claude[bot]"
+    # claude-code-action refuses non-human actors; a run would only burn the one try.
+    [ "$(get .workflow_run.actor.type)" != Bot ] || skip "pushed by a bot ($actor)"
     sha=$(get .workflow_run.head_sha)
     [ "$("$GH" api "repos/$repo/pulls/$n" --jq .head.sha)" = "$sha" ] || skip "PR head moved past $sha"
     owners=$("$GH" api "repos/$repo/issues/$n/labels" --jq '[.[].name | select(startswith("owner:"))] | join(",")')

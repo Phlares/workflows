@@ -44,6 +44,9 @@ run workflow_run "$(wr '' | jq -c '.workflow_run.actor.login = "claude[bot]"')"
 check "auto: claude[bot] push is skipped" is "skip=pushed by claude[bot]"
 check "auto: bot check needs no API call" test ! -s "$FAKE_GH_LOG"
 
+run workflow_run "$(wr '' | jq -c '.workflow_run.actor = {"login":"dependabot[bot]","type":"Bot"}')"
+check "auto: other bots are skipped" is "skip=pushed by a bot (dependabot[bot])"
+
 reset_gh; respond 'api repos/o/r/pulls/7*' '{"head":{"sha":"def"}}'
 run workflow_run "$(wr '')"
 check "auto: stale run (PR head moved) is skipped" is "skip=PR head moved past abc"

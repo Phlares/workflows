@@ -38,6 +38,18 @@ check ".github: refused" test "$code" -ne 0
 check ".github: says why" grep -q '.github/' <<<"$out"
 check ".github: nothing pushed" test "$(remote_subject feat)" = "init"
 
+setup pr feat; mkdir -p .github; echo x > '.github/x"y'
+pub "fix: thing"
+check ".github: a quoted file name is still refused" grep -q 'touches .github/' <<<"$out"
+
+setup pr feat; echo b > a.txt; printf '#!/bin/sh\ntouch "%s/hook-ran"\n' "$d" > .git/hooks/pre-commit; chmod +x .git/hooks/pre-commit
+pub "fix: thing"
+check "git hooks in the work tree do not run" test "$code" -eq 0 -a ! -e "$d/hook-ran"
+
+setup pr feat; echo b > a.txt; git config url."https://evil.example/".insteadOf "$d/remote.git"
+pub "fix: thing"
+check "a URL rewrite in .git/config is refused" grep -q 'refused: .git/config rewrites URLs' <<<"$out"
+
 setup pr feat
 pub "fix: thing"
 check "no change: refused" test "$code" -ne 0 -a ! -e "$d/fix/published"

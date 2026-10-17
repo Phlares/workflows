@@ -120,7 +120,7 @@ four labels below.
 | `timeout-minutes` | `20` | Limit for the fix step and for `install` |
 | `runs-on` | `ubuntu-latest` | Runner label |
 | `node-version`, `python-version`, `zig-version`, `working-directory`, `install`, `env` | as `check.yml` | Setup before tests |
-| `test-command` | empty | Command Claude may run with specific test names. Empty = no setup and no tests in the fix job |
+| `test-command` | empty | Command Claude may run with specific test names, in PR runs only. Empty = no setup and no tests in the fix job |
 
 | Label | Meaning |
 |---|---|
@@ -130,7 +130,9 @@ four labels below.
 | `owner:action` | A `claude-fix` run is working |
 
 Rules:
-- `test-command` runs from the repo root. Claude may call it only with test
+- `test-command` runs from the repo root, in PR runs only: an issue run never
+  runs code, so injected issue text cannot run with the App token. Claude may
+  call it only with test
   names; CI runs the full suite after the push.
 - The caller file must be on the default branch before labels work: the
   token exchange compares it with the default branch.
