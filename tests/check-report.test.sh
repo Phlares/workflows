@@ -14,7 +14,7 @@ report() { # $1 run.log text, $2 step (empty = no step file), rest = env assignm
 json() { jq -e "$1" "$RUNNER_TEMP/report/report.json" > /dev/null; }
 annotation() { grep -qxF "$1" "$tmp/stdout" || { echo "     stdout: $(cat "$tmp/stdout")"; return 1; }; }
 
-{ for i in $(seq 1 50); do echo "line $i"; done; printf '\033[31mError: boom\033[0m\n```\n  at x\n1 test failed\n}\n'; } > "$tmp/log"
+{ for i in $(seq 1 50); do echo "line $i"; done; printf '> pkg-fail@1.0.0 test\nsee tests/test_fail.py, src/error.js\n\033[31mError: boom\033[0m\n```\n  at x\n1 test failed\n}\n'; } > "$tmp/log"
 report "$(cat "$tmp/log")" run
 check "report: schema 1 fields" json '.schema == 1 and .repo == "o/r" and .pr == 7 and .sha == env.SHA and .run_url == env.RUN_URL and .job == "unit" and .step == "run"'
 check "report: numeric shard stays a number" json '.shard == 2 and .shard_total == 3'
@@ -31,6 +31,9 @@ report 'ok\n\nlast words\n\n' install PR=
 check "no failure word: last non-blank line" annotation "::error title=unit (shard 2/3)::last words"
 check "push run: pr is null" json '.pr == null and .step == "install"'
 check "summary: plain fence without backticks in the tail" test "$(grep -cx '```' "$GITHUB_STEP_SUMMARY")" -eq 2
+
+report 'built app-error-pages\nTypeError: x is undefined\n' run
+check "annotation: a word ending in Error" annotation "::error title=unit (shard 2/3)::TypeError: x is undefined"
 
 report '' ''
 check "no log, no step file: setup failure" json '.step == "setup" and .tail == []'

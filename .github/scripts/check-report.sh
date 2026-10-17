@@ -14,8 +14,10 @@ step=$(cat step 2>/dev/null || echo setup)
 sed -E 's/\x1b\[[0-9;?]*[A-Za-z]//g; s/\r$//' run.log | tail -n 40 | awk 1 > tail.txt
 
 # The first failure line in the tail names the cause; the last line is often
-# "}" or a log path.
-line=$(grep -m1 -iE 'error|fail|assert|panic' tail.txt || grep -v '^[[:space:]]*$' tail.txt | tail -n 1 || true)
+# "}" or a log path. A failure word starts a word (not pkg-fail, test_fail.py)
+# or ends one (TypeError).
+line=$(grep -m1 -iE '(^|[[:space:]([])(error|exception|fail|assert|panic)|[a-z](error|exception)\b' tail.txt ||
+  grep -v '^[[:space:]]*$' tail.txt | tail -n 1 || true)
 esc() { local s=${1//'%'/'%25'}; s=${s//$'\r'/'%0D'}; printf '%s' "${s//$'\n'/'%0A'}"; }
 title=$(esc "$NAME (shard $SHARD_INDEX/$SHARD_TOTAL)")
 title=${title//:/%3A}

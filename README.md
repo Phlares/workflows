@@ -83,8 +83,10 @@ commit, run URL, job, shard, failing step (`setup`, `install` or `run`) and the
 last 40 log lines with colour codes removed. A timeout counts as a failure of
 the step that ran out of time.
 
-- The annotation shows the first of those 40 lines that holds `error`, `fail`,
-  `assert` or `panic` (any case), else the last line.
+- The annotation shows the first of those 40 lines with a failure word, else
+  the last line. A failure word is `error`, `exception`, `fail`, `assert` or
+  `panic` at the start of a word, or `error` or `exception` at the end of one
+  (`TypeError`), in any case. `pkg-fail` and `test_fail.py` do not count.
 - `shard` in `report.json` is a number when the shard value is an integer,
   else a string.
 - In the artifact name, every character outside `A-Z a-z 0-9 . _ -` becomes
