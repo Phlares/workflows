@@ -11,6 +11,7 @@ respond 'api repos/o/r/actions/runs/11/jobs*' '{"jobs":[
   {"id":4,"name":"odd / odd/name: x (a)","conclusion":"failure"}]}'
 rule 'api repos/o/r/actions/artifacts/91/zip' 0 "$root/tests/fixtures/report.zip"
 rule 'api repos/o/r/actions/artifacts/92/zip' 0 "$root/tests/fixtures/report.zip"
+rule 'api repos/o/r/actions/artifacts/93/zip' 0 "$root/tests/fixtures/report.zip"
 { for i in $(seq 1 250); do printf 'line %s\n' "$i"; done; printf '\033[31mboom\033[0m\n'; } > "$tmp/log3"
 rule 'api *repos/o/r/actions/jobs/3/logs' 0 "$tmp/log3"
 
