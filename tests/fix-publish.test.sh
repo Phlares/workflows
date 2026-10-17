@@ -76,6 +76,7 @@ check "files the action restores from base are not committed" test "$(git --git-
 setup issue claude/issue-5-1; echo b > a.txt
 printf '#!/bin/sh\ntouch "%s/hook-ran"\n' "$d" > .git/hooks/post-index-change; chmod +x .git/hooks/post-index-change
 printf '#!/usr/bin/env bash\ntouch a.txt\ngit update-index --refresh >/dev/null 2>&1\necho https://github.com/o/r/pull/9\n' > "$d/gh-runs-git"
+chmod +x "$d/gh-runs-git"
 GH="$d/gh-runs-git" pub "fix: thing"
 check "git run by gh also skips hooks" test "$code" -eq 0 -a ! -e "$d/hook-ran"
 
