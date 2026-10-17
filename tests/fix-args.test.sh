@@ -4,10 +4,10 @@
 script="$root/.github/scripts/fix-args.sh"
 export HOME=/home/runner GITHUB_WORKSPACE=/home/runner/work/r/r RUNNER_TEMP=/home/runner/work/_temp \
   RUNNER_TOOL_CACHE=/opt/hostedtoolcache
-export FIX_DIR=$RUNNER_TEMP/fix MODEL=opus MAX_TURNS=50
+export FIX_DIR=$RUNNER_TEMP/fix MODEL=opus MAX_TURNS=50 EFFORT=medium
 args=()
-run() { # $1 kind, $2 test command; sets args (the parsed argument list)
-  out=$(KIND=$1 TEST_COMMAND=$2 bash "$script")
+run() { # $1 exec (true|false), $2 test command; sets args (the parsed argument list)
+  out=$(EXEC=$1 TEST_COMMAND=$2 bash "$script")
   eval "args=($out)"
 }
 flag() { # value after flag $1 in args
@@ -31,31 +31,33 @@ uncovered() { ! covers "$@"; }
 has() { [[ $1 == *"$2"* ]]; }
 lacks() { [[ $1 != *"$2"* ]]; }
 
-run issue "node --test"
+run false "node --test"
 allow=$(flag --allowedTools); deny=$(flag --disallowedTools)
-check "issue: model and turn cap" test "$(flag --model) $(flag --max-turns)" = "opus 50"
-check "issue: task folder is readable" test "$(flag --add-dir)" = "$FIX_DIR/task"
-check "issue: can edit the workspace" covers "$allow" "$GITHUB_WORKSPACE/src/a.js"
+check "no exec: model, effort and turn cap" test "$(flag --model) $(flag --effort) $(flag --max-turns)" = "opus medium 50"
+check "no exec: task folder is readable" test "$(flag --add-dir)" = "$FIX_DIR/task"
+check "no exec: can edit the workspace" covers "$allow" "$GITHUB_WORKSPACE/src/a.js"
 for p in "$GITHUB_WORKSPACE/src/a.js" "$GITHUB_WORKSPACE/test/a.test.js"; do
-  check "issue: deny leaves $p editable" uncovered "$deny" "$p"
+  check "no exec: deny leaves $p editable" uncovered "$deny" "$p"
 done
 for p in "$HOME/.gitconfig" "$HOME/.config/git/config" "$HOME/.bashrc" \
   "$RUNNER_TEMP/_runner_file_commands/set_env_1" "$FIX_DIR/bin/fix-publish.sh" \
   /home/runner/work/_actions/anthropics/claude-code-action/v1/src/post.ts \
   /home/runner/work/_tool/node/24/x64/bin/node "$RUNNER_TOOL_CACHE/node/24/x64/bin/node"; do
-  check "issue: deny covers $p" covers "$deny" "$p"
+  check "no exec: deny covers $p" covers "$deny" "$p"
 done
-check "issue: may publish" has "$allow" "Bash(bash $FIX_DIR/bin/fix-publish.sh:*)"
-check "issue: no general shell" lacks ",$allow," ",Bash,"
-check "issue: no tests" lacks "$allow" "node --test"
-check "issue: no web tools" has "$deny" "WebFetch,WebSearch"
+check "no exec: may publish" has "$allow" "Bash(bash $FIX_DIR/bin/fix-publish.sh:*)"
+check "no exec: no general shell" lacks ",$allow," ",Bash,"
+check "no exec: no tests" lacks "$allow" "node --test"
+check "no exec: no web tools" has "$deny" "WebFetch,WebSearch"
 
-run pr "pytest -k 'a b'"
+run true "pytest -k 'a b'"
 allow=$(flag --allowedTools)
-check "pr: general shell" has ",$allow," ",Bash,"
-check "pr: test command with quotes survives" has "$allow" "Bash(pytest -k 'a b':*)"
-check "pr: schema is valid JSON" jq -e '.required == ["fixed","summary"]' <<<"$(flag --json-schema)"
+check "exec: general shell" has ",$allow," ",Bash,"
+check "exec: test command with quotes survives" has "$allow" "Bash(pytest -k 'a b':*)"
+check "exec: schema is valid JSON" jq -e '.required == ["fixed","summary"]' <<<"$(flag --json-schema)"
 
-run pr ""
-check "pr without test command: no empty rule" lacks "$(flag --allowedTools)" "Bash(:*)"
+run true ""
+check "exec without test command: no empty rule" lacks "$(flag --allowedTools)" "Bash(:*)"
+EFFORT='' run true ""
+check "empty effort: no flag" lacks " ${args[*]} " " --effort "
 finish

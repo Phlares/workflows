@@ -9,6 +9,7 @@ on:
   workflow_call:
     inputs:
       model: { type: string, default: opus }
+      effort: { type: string, default: medium }
       max-turns: { type: number, default: 50 }
       timeout-minutes: { type: number, default: 20 }
       runs-on: { type: string, default: ubuntu-latest }
@@ -72,20 +73,21 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           NUMBER: ${{ steps.target.outputs.number }}
-          SHA: ${{ steps.target.outputs.sha }}
-          AUTO: ${{ steps.target.outputs.auto }}
         run: |
           for l in claude-fix owner:local owner:cloud; do
             gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/$NUMBER/labels/$l" --silent 2>/dev/null || true
           done
           gh api "repos/$GITHUB_REPOSITORY/issues/$NUMBER/labels" -f "labels[]=owner:action" --silent
-          if [ "$AUTO" = true ]; then
-            gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state=success -f context=claude-fix/auto \
-              -f description="auto fix attempted" --silent
-          fi
-      # Tests run only in PR runs: an issue run that could write a file and
-      # then run it would run injected code with the App token.
-      - if: steps.target.outputs.kind == 'pr' && inputs.test-command != ''
+      - name: reset config
+        if: steps.target.outputs.kind == 'pr'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ github.event.repository.default_branch }}
+        run: bash "$FIX_DIR/bin/fix-reset-config.sh" "$BASE"
+      # Code runs only when exec is true (fix-target.sh says when): a run that
+      # could write a file and then run it would run injected code with the
+      # App token.
+      - if: steps.target.outputs.exec == 'true' && inputs.test-command != ''
         uses: ./.wf/.github/actions/setup
         with:
           node-version: ${{ inputs.node-version }}
@@ -95,7 +97,7 @@ jobs:
           env: ${{ inputs.env }}
       # A failed install must not stop the fix: the failure may be the install.
       - id: install
-        if: steps.target.outputs.kind == 'pr' && inputs.test-command != '' && inputs.install != ''
+        if: steps.target.outputs.exec == 'true' && inputs.test-command != '' && inputs.install != ''
         continue-on-error: true
         timeout-minutes: ${{ inputs.timeout-minutes }}
         working-directory: ${{ inputs.working-directory }}
@@ -125,10 +127,12 @@ jobs:
         if: steps.target.outputs.skip == '' && steps.collect.outputs.empty != 'true'
         env:
           KIND: ${{ steps.target.outputs.kind }}
+          EXEC: ${{ steps.target.outputs.exec }}
           NUMBER: ${{ steps.target.outputs.number }}
           BRANCH: ${{ steps.target.outputs.branch }}
           BASE: ${{ steps.target.outputs.base }}
           MODEL: ${{ inputs.model }}
+          EFFORT: ${{ inputs.effort }}
           MAX_TURNS: ${{ inputs.max-turns }}
           TEST_COMMAND: ${{ inputs.test-command }}
         run: |
@@ -159,7 +163,7 @@ jobs:
 
             Rules:
             1. Make the smallest change that fixes the problem. Never change files under .github/.
-            2. ${{ steps.target.outputs.kind == 'pr' && inputs.test-command != '' && format('Run tests only as `{0} <test files or IDs>`, naming the tests from the failure files or the tests that cover your change. Never run it without test names: CI runs the full suite after your push.', inputs.test-command) || 'No tests run in this job. CI runs them after your push.' }}
+            2. ${{ steps.target.outputs.exec == 'true' && inputs.test-command != '' && format('Run tests only as `{0} <test files or IDs>`, naming the tests from the failure files or the tests that cover your change. Never run it without test names: CI runs the full suite after your push.', inputs.test-command) || 'No tests run in this job. CI runs them after your push.' }}
             3. When your change is done and its tests pass, publish it once:
                bash ${{ env.FIX_DIR }}/bin/fix-publish.sh "<commit subject, imperative, under 70 characters>"
                Do not run git commit or git push yourself.
@@ -183,6 +187,7 @@ jobs:
           REPO: ${{ github.repository }}
           NUMBER: ${{ steps.target.outputs.number }}
           SHA: ${{ steps.target.outputs.sha }}
+          AUTO: ${{ steps.target.outputs.auto }}
           SKIP: ${{ steps.target.outputs.skip }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           EMPTY: ${{ steps.collect.outputs.empty }}

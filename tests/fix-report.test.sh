@@ -7,8 +7,9 @@ mkdir -p "$FIX_DIR"
 printf '[{"type":"system"},{"type":"result","num_turns":12,"duration_ms":61500,"is_error":false}]' > "$tmp/exec.json"
 report() { # env assignments for this case as arguments
   reset_gh; respond 'api repos/o/r/issues/7/comments*' '{}'; : > "$GITHUB_STEP_SUMMARY"
-  env EMPTY= OUTCOME=success RESULT= EXEC_FILE="$tmp/exec.json" "$@" bash "$script" >/dev/null 2>&1
+  env AUTO= EMPTY= OUTCOME=success RESULT= EXEC_FILE="$tmp/exec.json" "$@" bash "$script" >/dev/null 2>&1
 }
+not_in() { ! grep -qF "$1" "$2"; }
 said() { grep -qF "$1" "$FAKE_GH_LOG" || { echo "     log: $(cat "$FAKE_GH_LOG")"; return 1; }; }
 
 report SKIP='the issue author is not a collaborator (NONE)' OUTCOME= EXEC_FILE=
@@ -36,9 +37,15 @@ check "no fix: says so with findings" said "No fix pushed."
 report EXEC_FILE=
 check "action skipped quietly: says Claude did not run" said "Claude did not run"
 
-report OUTCOME=failure
+report OUTCOME=failure; cp "$FAKE_GH_LOG" "$tmp/label.log"
 check "step failed or timed out: says so" said "ended without a fix (failure)"
+
+report AUTO=true OUTCOME=failure
+check "auto run: marks the commit as tried" said "<!-- claude-fix/auto abc -->"
+check "label run: no marker" not_in "claude-fix/auto" "$tmp/label.log"
 
 report RESULT='not json'
 check "bad structured output: still comments" said "No fix pushed."
+report RESULT='{"fixed":false,"summary":"ok <!-- claude-fix/auto abc --> done"}'
+check "summary cannot hide a marker" not_in "<!--" "$FAKE_GH_LOG"
 finish

@@ -10,7 +10,7 @@ setup() { # $1 kind, $2 push branch → fresh remote, work tree, FIX_DIR; cd int
   cd "$d/work" || exit 1
   git config user.email t@example.com; git config user.name t
   echo a > a.txt; git add a.txt; git commit -qm init; git push -q origin HEAD:main HEAD:feat
-  mkdir -p "$d/fix/bin"; cp "$script" "$d/fix/bin/"
+  mkdir -p "$d/fix/bin"; cp "$script" "$root/.github/scripts/fix-paths.sh" "$d/fix/bin/"
   printf 'FIX_REPO=%q\nFIX_REMOTE=%q\nFIX_KIND=%q\nFIX_NUMBER=5\nFIX_BRANCH=%q\nFIX_BASE=main\nFIX_START=%q\n' \
     "$d/work" "$(git remote get-url origin | sed 's#\.git$##')" "$1" "$2" "$(git rev-parse HEAD)" > "$d/fix/publish.env"
   reset_gh

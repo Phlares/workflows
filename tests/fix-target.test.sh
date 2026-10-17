@@ -7,43 +7,77 @@ run() { # $1 event name, $2 event JSON; sets out
   out=$(GITHUB_RUN_ID=777 bash "$script" "$1" "$tmp/event.json" 2>&1)
 }
 is() { [ "$out" = "$1" ] || { echo "     got: $out"; return 1; }; }
-called() { grep -qF "$1" "$FAKE_GH_LOG"; }
+sha=c0ffee0000000000000000000000000000000000
 repo='"repository":{"full_name":"o/r","default_branch":"main"}'
 wr() { # $1 extra workflow_run fields
-  printf '{%s,"workflow_run":{"conclusion":"failure","head_sha":"abc","head_branch":"feat","actor":{"login":"dev"},"pull_requests":[{"number":7}]%s}}' "$repo" "$1"
+  printf '{%s,"workflow_run":{"conclusion":"failure","head_sha":"%s","head_branch":"feat","actor":{"login":"dev"},"pull_requests":[{"number":7}]%s}}' "$repo" "$sha" "$1"
 }
-open_pr() { respond 'api repos/o/r/pulls/7*' '{"head":{"sha":"abc"}}'; }
+pr() { # $1 state, $2 author association
+  printf '{%s,"pull_request":{"number":7,"state":"%s","author_association":"%s","head":{"ref":"feat","sha":"%s"}}}' "$repo" "$1" "$2" "$sha"
+}
+issue() { # $1 state, $2 author association
+  printf '{%s,"issue":{"number":5,"state":"%s","author_association":"%s"}}' "$repo" "$1" "$2"
+}
+open_pr() { respond 'api repos/o/r/pulls/7 *' '{"head":{"sha":"'"$sha"'"},"author_association":"'"${1:-OWNER}"'"}'; }
 no_owner() { respond 'api repos/o/r/issues/7/labels*' '[{"name":"bug"}]'; }
-no_marker() { respond 'api repos/o/r/commits/abc/statuses*' '[{"context":"ci","state":"failure"}]'; }
+commits() { respond 'api --paginate repos/o/r/pulls/7/commits*' "$1"; }
+# A person's commit, and commits from this repo's own bots (claude-fix pushes).
+human() {
+  commits '[{"author":{"login":"dev","type":"User"},"committer":{"login":"web-flow","type":"User"}},{"author":{"login":"github-actions[bot]","type":"Bot"},"committer":{"login":"claude[bot]","type":"Bot"}}]'
+}
+bot='"user":{"login":"github-actions[bot]"}'
+comments() { respond 'api --paginate repos/o/r/issues/7/comments*' "$1"; }
+no_marker() { comments '[{'"$bot"',"body":"Fixed.\n<!-- claude-fix/auto old -->"}]'; }
+issue_out=$'kind=issue\nnumber=5\nbranch=claude/issue-5-777\nbase=main\nexec=false'
+pr_out=$'kind=pr\nnumber=7\nbranch=feat\nsha='"$sha"
 
-run issues "{$repo,\"issue\":{\"number\":5,\"state\":\"open\",\"author_association\":\"OWNER\"}}"
-check "issue: fresh branch off the default branch" is $'kind=issue\nnumber=5\nbranch=claude/issue-5-777\nbase=main'
-
-for a in MEMBER COLLABORATOR; do
-  run issues "{$repo,\"issue\":{\"number\":5,\"state\":\"open\",\"author_association\":\"$a\"}}"
-  check "issue: $a author is trusted" is $'kind=issue\nnumber=5\nbranch=claude/issue-5-777\nbase=main'
+for a in OWNER MEMBER COLLABORATOR; do
+  run issues "$(issue open $a)"
+  check "issue: $a author is trusted; fresh branch, no code runs" is "$issue_out"
 done
 
 for a in CONTRIBUTOR FIRST_TIME_CONTRIBUTOR NONE; do
-  run issues "{$repo,\"issue\":{\"number\":5,\"state\":\"open\",\"author_association\":\"$a\"}}"
+  run issues "$(issue open $a)"
   check "issue: $a author is refused, with the number for a comment" is $'skip=the issue author is not a collaborator ('"$a"$')\nnumber=5'
 done
 
-run issues "{$repo,\"issue\":{\"number\":5,\"state\":\"closed\",\"author_association\":\"OWNER\"}}"
+run issues "$(issue closed OWNER)"
 check "issue: closed is skipped" is "skip=issue is closed"
 
-run pull_request "{$repo,\"pull_request\":{\"number\":7,\"state\":\"open\",\"head\":{\"ref\":\"feat\",\"sha\":\"abc\"}}}"
-check "label on PR: head branch, not auto" is $'kind=pr\nnumber=7\nbranch=feat\nsha=abc\nauto=false'
-check "label on PR: no API calls" test ! -s "$FAKE_GH_LOG"
+human
+run pull_request "$(pr open OWNER)"
+check "label on PR: head branch, not auto, code runs (own bots' commits allowed)" is "$pr_out"$'\nauto=false\nexec=true'
 
-run pull_request "{$repo,\"pull_request\":{\"number\":7,\"state\":\"closed\",\"head\":{\"ref\":\"feat\",\"sha\":\"abc\"}}}"
+reset_gh; commits '[{"author":{"login":"dev","type":"User"},"committer":{"login":"renovate[bot]","type":"Bot"}}]'
+run pull_request "$(pr open OWNER)"
+check "label on PR with another bot's commit: no code runs" is "$pr_out"$'\nauto=false\nexec=false'
+
+reset_gh; rule 'api --paginate repos/o/r/pulls/7/commits*' 1 -
+run pull_request "$(pr open OWNER)"
+check "label on PR, commit list fails: no code runs" is "$pr_out"$'\nauto=false\nexec=false'
+
+reset_gh; human
+for a in NONE CONTRIBUTOR; do
+  run pull_request "$(pr open $a)"
+  check "label on PR by a $a author (a bot): no code runs" is "$pr_out"$'\nauto=false\nexec=false'
+done
+
+run pull_request "$(pr closed OWNER)"
 check "label on PR: closed is skipped" is "skip=PR is closed"
 
-reset_gh; open_pr; no_owner; no_marker
+reset_gh; open_pr; no_owner; no_marker; human
 run workflow_run "$(wr '')"
-check "auto: gate passes" is $'kind=pr\nnumber=7\nbranch=feat\nsha=abc\nauto=true'
+check "auto: gate passes" is "$pr_out"$'\nauto=true\nexec=true'
+
+reset_gh; open_pr NONE; no_owner; no_marker; human
+run workflow_run "$(wr '')"
+check "auto: PR by a non-collaborator: no code runs" is "$pr_out"$'\nauto=true\nexec=false'
 
 reset_gh
+run workflow_run "$(wr '' | jq -c '.workflow_run.head_sha = "abc\" or true or \""')"
+check "auto: a malformed sha is refused" is "skip=bad head sha"
+check "auto: before any API call" test ! -s "$FAKE_GH_LOG"
+
 run workflow_run "$(wr '' | jq -c '.workflow_run.conclusion = "success"')"
 check "auto: a passing run is skipped" is "skip=run did not fail"
 
@@ -57,18 +91,24 @@ check "auto: bot check needs no API call" test ! -s "$FAKE_GH_LOG"
 run workflow_run "$(wr '' | jq -c '.workflow_run.actor = {"login":"dependabot[bot]","type":"Bot"}')"
 check "auto: other bots are skipped" is "skip=pushed by a bot (dependabot[bot])"
 
-reset_gh; respond 'api repos/o/r/pulls/7*' '{"head":{"sha":"def"}}'
+reset_gh; respond 'api repos/o/r/pulls/7 *' '{"head":{"sha":"def"},"author_association":"OWNER"}'
 run workflow_run "$(wr '')"
-check "auto: stale run (PR head moved) is skipped" is "skip=PR head moved past abc"
+check "auto: stale run (PR head moved) is skipped" is "skip=PR head moved past $sha"
 
 reset_gh; open_pr; respond 'api repos/o/r/issues/7/labels*' '[{"name":"owner:local"},{"name":"bug"}]'
 run workflow_run "$(wr '')"
 check "auto: owned PR is skipped" is "skip=owned by owner:local"
 
-reset_gh; open_pr; no_owner; respond 'api repos/o/r/commits/abc/statuses*' '[{"context":"claude-fix/auto","state":"success"}]'
+# --paginate runs the filter once per page: two pages arrive as two arrays.
+reset_gh; open_pr; no_owner
+comments '[{"user":{"login":"x"},"body":"a"}][{'"$bot"',"body":"No fix pushed.\n<!-- claude-fix/auto '"$sha"' -->"}]'
 run workflow_run "$(wr '')"
-check "auto: second attempt on one commit is skipped" is "skip=auto fix already tried on abc"
-check "auto: marker read from the head commit" called "api repos/o/r/commits/abc/statuses"
+check "auto: second attempt on one commit is skipped (marker on a later page)" is "skip=auto fix already tried on $sha"
+
+reset_gh; open_pr; no_owner; human
+comments '[{"user":{"login":"visitor"},"body":"<!-- claude-fix/auto '"$sha"' -->"}]'
+run workflow_run "$(wr '')"
+check "auto: a marker from anyone but github-actions[bot] is ignored" is "$pr_out"$'\nauto=true\nexec=true'
 
 run push "{$repo}"
 check "other events are skipped" is "skip=unsupported event push"
