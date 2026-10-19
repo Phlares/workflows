@@ -8,3 +8,9 @@ updates:
       actions:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+      actions-major:
+        patterns: ["*"]
+        update-types: ["major"]
+      actions-security:
+        applies-to: security-updates
+        patterns: ["*"]
