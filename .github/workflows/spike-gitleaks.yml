@@ -47,3 +47,9 @@ jobs:
           git clone -q --depth 1 "file://$PWD/t" t1 && cd t1
           if prek run --all-files --hook-stage manual; then echo "UNEXPECTED PASS"; exit 1; fi
           echo "depth-1 history stage blocked"
+      - name: prek store size
+        run: |
+          du -sh ~/.cache/prek ~/.cache/prek/* 2>/dev/null; du -sh ~/go/pkg/mod 2>/dev/null || true
+          go env GOMODCACHE GOCACHE; du -sh "$(go env GOMODCACHE)" "$(go env GOCACHE)" 2>/dev/null || true
+          tar -czf /tmp/p.tgz -C ~/.cache prek && ls -lh /tmp/p.tgz
+          prek cache gc -v 2>&1 | tail -3; du -sh ~/.cache/prek
