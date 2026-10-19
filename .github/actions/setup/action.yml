@@ -20,7 +20,8 @@ runs:
       uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
       with:
         python-version: ${{ inputs.python-version }}
-        cache: pip
+        # uv jobs keep their own cache; an empty pip cache only warns.
+        cache: ${{ inputs.uv-version == '' && 'pip' || '' }}
         cache-dependency-path: |
           ${{ inputs.working-directory }}/pyproject.toml
           ${{ inputs.working-directory }}/requirements*.txt
