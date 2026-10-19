@@ -27,7 +27,7 @@ A tier is a set of values in the generated files. Each tier is the one below it 
 |---|---|---|
 | Greybox | Local exploration (PokePlanner, LocalModelsLand) | Nothing. The template does not offer it. |
 | Prototype | Work that starts to formalize | Hooks + CI `lint` job. ruff default rules + `ruff format` + RUF100, PGH004. oxlint default rules with unused directives as errors. Suppression guard. `check-merge-conflict`. Dependabot with minor/major/security groups. |
-| Product | Talks to the public: OSS, data, secrets, security, uptime | Prototype plus: ruff E, F, W, I, B, UP (E501 off). oxlint `--deny-warnings`. gitleaks hook. Test job. Python: pyright standard with `enableTypeIgnoreComments = false` and `reportUnnecessaryTypeIgnoreComment = "error"`. |
+| Product | Talks to the public: OSS, data, secrets, security, uptime | Prototype plus: ruff E, F, W, I, B, UP (E501 off). oxlint `--deny-warnings`. Test job. Python: pyright standard with `enableTypeIgnoreComments = false` and `reportUnnecessaryTypeIgnoreComment = "error"`. |
 | Publication / science | Benchmarks, research code | Not shipped. Intent: consistency checks, blinding and route tests (blinded data never flows upstream), benchmarks. It is defined when the first such repo exists. |
 
 Prototype runs tests locally only. CI runs lint.
@@ -43,12 +43,11 @@ Prototype runs tests locally only. CI runs lint.
 | C5 | claude-fix-sandbox is the live adopter, at product tier, Node. On a branch, `copier copy --overwrite` runs over the existing tree: `ci.yml` and `dependabot.yml` are replaced; `package.json`, `src/`, `test/` and `claude-fix.yml` stay; `pyproject.toml` and `uv.lock` are added. The PR diff is the review. | Decision 2026-10-19. It runs the real Dependabot, lint, test and `copier update` path on GitHub. Product, because claude-fix pilots need its test job. |
 | C6 | Copier asks: `tier` (prototype, product), `languages` (multiselect: python, node), `default_branch` (default `main`), `target_os` (ubuntu-latest, windows-latest; product only), `python_version` (default `3.12`; always, since the lint job runs prek through uv), `node_version` (default `24`; node only). | The four questions in #13, plus the toolchain versions. Zig is out: no new repo needs it. |
 | C7 | `target_os` sets both the test runner and pyright's `pythonPlatform` (Linux or Windows). `python_version` sets `requires-python`, pyright's `pythonVersion` and the CI Python. | T5 (typecheck spec): platform and version follow the product. A new repo has one of each. |
-| C8 | Secrets: gitleaks, as a pre-commit hook pinned by hash, at product tier. | GitHub secret scanning is free on public repos only. On a personal account, private repos cannot get it (it needs Secret Protection on an organization or Enterprise). gitleaks (MIT) runs the same locally and in CI on public and private repos. |
-| C9 | The guard's marker table gains `gitleaks:allow` (all files). | It is an inline suppression like `noqa`. It must sit in `.suppressions` with a reason. |
+| C8 | No secrets check in the template for now. #34 holds the research and the implications. | Decision 2026-10-19. GitHub secret scanning is free on public repos only; private repos on a personal account cannot get it. A gitleaks hook would cover both, but it is scoped in later if warranted. |
 | C10 | Every generated repo has `pyproject.toml` with `[dependency-groups]` and a `uv.lock`, including Node-only repos. The generated file has no `[build-system]`, so uv does not build or install the project. `lint = ["prek"]` in every repo. | One pin mechanism. prek is a Python package; Node-only repos install it the same way. |
 | C11 | `pyproject.toml` and `.gitignore` are written only when absent (`_skip_if_exists`), so `copier update` never touches them. Rule values live in template-owned files that `copier update` does reach: `ruff.toml` and `pyrightconfig.json`. When `pyproject.toml` already exists, the post-copy message lists the groups to add. | A repo that already has a `pyproject.toml` keeps it. Pylance reads `pyrightconfig.json`, so T4's one-config rule holds; template repos use the file instead of `[tool.pyright]`. ruff reads `ruff.toml` before `[tool.ruff]`, so a repo must not keep both. |
 | C12 | The template does not create `uv.lock`. The post-copy message says to run `uv lock`. No `_tasks`. | Tasks make the template "unsafe" (copier needs `--trust`). Without a lock, `uv sync --locked` fails CI at once, which makes the missing step loud. |
-| C14 | Tool sources: ruff, oxlint and gitleaks run as hook repos (Dependabot `pre-commit`). pyright and pytest sit in uv groups (Dependabot `uv`). prek installs Node for the oxlint hook, so a lint job sets only `python-version` and `uv-version`. | As the callers run today; VoxGarbler's lint job lints `game/` with only Python set up. |
+| C14 | Tool sources: ruff and oxlint run as hook repos (Dependabot `pre-commit`). pyright and pytest sit in uv groups (Dependabot `uv`). prek installs Node for the oxlint hook, so a lint job sets only `python-version` and `uv-version`. | As the callers run today; VoxGarbler's lint job lints `game/` with only Python set up. |
 | C15 | The workflow is named `CI`. | claude-fix callers trigger on `workflow_run: { workflows: [CI] }` (README, sandbox). |
 | C13 | Repo settings are out of reach of copier. The post-copy message lists them: Dependabot alerts and security updates on, required checks, `needs-human` label for claude-fix. | Copier writes files only. |
 
@@ -81,7 +80,7 @@ Example (VoxGarbler `lint`):
 | `.copier-answers.yml` | yes | yes | Never edited by hand. |
 | `.github/workflows/ci.yml` | `lint` | `lint`, `test`, and `typecheck` (python) | Workflow name `ci`. `permissions: contents: read`, concurrency cancel, no path filter (required checks must always report). Python and Node tests are separate jobs when both languages are chosen. |
 | `.github/dependabot.yml` | yes | yes | `github-actions`, `pre-commit`, `uv`; `npm` when node. Each with the minor/patch, major and security groups (pre-commit keeps one `hooks` group, as #29). |
-| `.pre-commit-config.yaml` | yes | yes | `check-merge-conflict`, ruff (python), oxlint (node), suppression guard, gitleaks (product). Every `rev` is a hash with `# frozen:`. |
+| `.pre-commit-config.yaml` | yes | yes | `check-merge-conflict`, ruff (python), oxlint (node), suppression guard. Every `rev` is a hash with `# frozen:`. |
 | `ruff.toml` | python | python | Rule set by tier. |
 | `pyrightconfig.json` | no | python | Standard mode, the two flags, `pythonVersion`, `pythonPlatform` (C7). |
 | `pyproject.toml` | yes | yes | Only when absent. `[dependency-groups]`; no `[build-system]`, so uv never builds the project. |
@@ -93,7 +92,7 @@ Node test job: `npm ci` then `npm test`. TypeScript typecheck is out: no adopter
 
 ## Order of work
 
-1. **v1.6.0** (this repo): `uv-version` input; guard row `gitleaks:allow`. Tests first, as for every script here.
+1. **v1.6.0** (this repo): `uv-version` input. Tests first, as for every script here.
 2. **VoxGarbler** (after its hook PR #91 merges): groups `lint` and `ci` in `pyproject.toml`, `uv.lock`, `lint.yml` and `py-ci.yml` on v1.6.0 with the U2 lines, `git rm` of `requirements-ci.{in,txt}` and `requirements-lint.{in,txt}`, and the `py-ci` path filter switched from `requirements-ci.txt` to `uv.lock`. Approving this spec approves those removals. `deploy/` and `release.yml` do not read the requirements files and do not change. The `dev` extra stays for local `pip install -e .[dev]`.
 3. **Template** (this repo), test-first, release v1.7.0.
 4. **claude-fix-sandbox**: regenerate from v1.7.0 at product tier, Node. Its `claude-fix.yml` stays. Run `copier update` once against a later commit to prove the update path.
@@ -107,7 +106,7 @@ A test script generates each combination into a temp dir: 2 tiers × 3 language 
 - `ci.yml` and the hook config pin the HEAD commit hash (C2). Rule values match the tier (RUF100, PGH004, the pyright flags, oxlint flags).
 - actionlint passes on `ci.yml`. `dependabot.yml` passes the SchemaStore schema (check-jsonschema).
 - After `uv lock` and `uv sync --locked --only-group lint`, `prek run --all-files` passes on a clean seed file per language.
-- Mutation checks: a `# noqa` in the seed fails `prek run`; at product tier, a fake secret fails gitleaks and a stale `# pyright: ignore[...]` fails pyright.
+- Mutation checks: a `# noqa` in the seed fails `prek run`; at product tier, a stale `# pyright: ignore[...]` fails pyright.
 
 Update test: generate from a temp tag on an older commit, change one pin by hand (as Dependabot would), tag HEAD, run `copier update`. The changed pin survives, or the conflict appears as markers and `check-merge-conflict` fails.
 
@@ -117,6 +116,7 @@ The test job joins `self-test` (Ubuntu).
 
 - Retrofitting existing callers (C4).
 - vps-ai-manager: keep-or-delete and security fixes first (Phlares/vps-ai-manager#40).
+- Secrets scanning (#34).
 - Publication tier, Zig, TypeScript typecheck, eslint (no template user runs eslint).
 - Repo settings automation (C13).
 

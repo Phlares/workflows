@@ -6,7 +6,7 @@
 
 **Architecture:** One reusable `check.yml` gains a toolchain input. The template lives in `template/` with `copier.yml` at the repo root; its tier is one ordered answer that gates files and values. `tests/template.test.sh` generates every tier and language set into a temp dir and runs the generated checks.
 
-**Tech Stack:** GitHub Actions, copier 9.19.1, uv 0.13.1, prek, ruff, oxlint, pyright, gitleaks, bash tests (`tests/lib.sh`).
+**Tech Stack:** GitHub Actions, copier 9.19.1, uv 0.13.1, prek, ruff, oxlint, pyright, bash tests (`tests/lib.sh`).
 
 **Spec:** `docs/specs/2026-10-19-template-uv-design.md`
 
@@ -16,7 +16,6 @@
   - `astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0`
   - uv `0.13.1`
   - copier `9.19.1` (`_min_copier_version: "9.19"`)
-  - `gitleaks/gitleaks` rev `83d9cd684c87d95d656c1458ef04895a7f1cbd8e  # frozen: v8.30.1`
   - `pre-commit/pre-commit-hooks` rev `3e8a8703264a2f4a69428a0aa4dcb512790b2c8c  # frozen: v6.0.0`
   - `astral-sh/ruff-pre-commit` rev `38bfb07c0c64c304f47eb52090f8288150c77730  # frozen: v0.17.1`
   - `oxc-project/mirrors-oxlint` rev `5b56cf853a2b0e1e276773824e00111e6312cb09  # frozen: v1.88.0`
@@ -39,32 +38,17 @@
 
 ## Review Focus
 
-1. **The tier answer is changed during `copier update`.** Prototype → product must add the product files and values, not leave the prototype ones. Test in Task 8.
-2. **A new repo already has a `pyproject.toml`.** Copier must keep it unchanged, and the post-copy message must list the groups to add. Test in Task 7.
-3. **Python + Node together.** Both the ruff and oxlint hooks run, and both test jobs exist with distinct `name:` inputs (artifact names must not collide). Test in Task 6.
-4. **A stale `uv.lock` in a generated repo.** The CI install step fails. Task 2 checks this report shape through `fail-uv-drift`.
-5. **A Windows `target_os`.** `pythonPlatform` must be `Windows` and the test job must run on `windows-latest`. The lint and typecheck jobs stay on Ubuntu. Test in Task 6.
+1. **The tier answer is changed during `copier update`.** Prototype → product must add the product files and values, not leave the prototype ones. Test in Task 7.
+2. **A new repo already has a `pyproject.toml`.** Copier must keep it unchanged, and the post-copy message must list the groups to add. Test in Task 6.
+3. **Python + Node together.** Both the ruff and oxlint hooks run, and both test jobs exist with distinct `name:` inputs (artifact names must not collide). Test in Task 5.
+4. **A stale `uv.lock` in a generated repo.** The CI install step fails. Task 1 checks this report shape through `fail-uv-drift`.
+5. **A Windows `target_os`.** `pythonPlatform` must be `Windows` and the test job must run on `windows-latest`. The lint and typecheck jobs stay on Ubuntu. Test in Task 5.
 
 ---
 
 ## Part A: check.yml v1.6.0 (branch `feat/uv`, this repo)
 
-### Task 1: guard row `gitleaks:allow`
-
-**Files:**
-- Modify: `.github/scripts/suppressions.py` (globals and `MARKERS`)
-- Test: `tests/suppressions.test.sh` (samples block)
-
-**Interfaces:**
-- Produces: marker name `gitleaks:allow`, kind COUNT. A new glob tuple `ANY = PY + JS + CSS + SH + ("*.yml", "*.yaml", "*.toml", "*.json", "*.env", "*.ini", "*.cfg")`. The regex `gitleaks:allow` needs no comment opener, because gitleaks matches it anywhere on the line.
-
-- [ ] **Step 1: Write the failing test.** Add samples `a.py	c	gitleaks:allow	token = "x"  # gitleaks:allow` and `c.yaml	c	gitleaks:allow	key: x # gitleaks:allow`. The test file is scanned by its own hook, so build the marker the way `sc` is built: `gl="gitleaks"":allow"`.
-- [ ] **Step 2: Run it.** `bash tests/suppressions.test.sh`. Expected: FAIL on both `gitleaks:allow` samples.
-- [ ] **Step 3: Implement.** Add `ANY` and the row `("gitleaks:allow", ANY, r"gitleaks:allow", COUNT)`. Update the README marker list.
-- [ ] **Step 4: Run it.** `bash tests/suppressions.test.sh`. Expected: `all passed`. Then run `python .github/scripts/suppressions.py` in the repo root. Expected: exit 0, with the baseline unchanged.
-- [ ] **Step 5: Commit.** `feat(suppressions): count gitleaks:allow`
-
-### Task 2: `uv-version` input
+### Task 1: `uv-version` input
 
 **Files:**
 - Modify: `.github/actions/setup/action.yml`, `.github/workflows/check.yml` (inputs and setup call), `.github/workflows/self-test.yml`, `README.md` (inputs table and a uv example)
@@ -83,7 +67,7 @@
 - [ ] **Step 4: Verify.** actionlint passes locally. Push the branch and open the PR. Expected: `verify` green, `py-uv` success, `fail-uv-drift` failure at step `install`.
 - [ ] **Step 5: Bump** `pyproject.toml` `version = "1.6.0"`. Commit `feat(check): uv-version input`.
 
-### Task 3: review, merge, tag v1.6.0
+### Task 2: review, merge, tag v1.6.0
 
 - [ ] Run `/code-review medium`, inline, over `main..feat/uv`, and fix the findings. Skip `/simplify` unless the diff got messy (small change).
 - [ ] The owner merges. Then tag `v1.6.0` on the merge commit, push the tag, and record the hash in memory and in a comment on #32.
@@ -92,7 +76,7 @@
 
 Starts when VoxGarbler #91 is merged and v1.6.0 is tagged.
 
-### Task 4: groups, lock, CI lines
+### Task 3: groups, lock, CI lines
 
 **Files:**
 - Modify: `pyproject.toml` (add `[dependency-groups]`), `.github/workflows/lint.yml`, `.github/workflows/py-ci.yml`, `.github/dependabot.yml` (uv comment only)
@@ -118,11 +102,11 @@ Starts when VoxGarbler #91 is merged and v1.6.0 is tagged.
 
 ## Part C: template v1.7.0 (branch `feat/template`, this repo)
 
-### Task 5: copier questions and the file set
+### Task 4: copier questions and the file set
 
 **Files:**
 - Create: `copier.yml`, `template/{{_copier_conf.answers_file}}.jinja`, `tests/template.test.sh`
-- Create (empty shells, filled in Tasks 6-7): every file in the spec's "Generated files" table, under `template/` with `.jinja` names and conditional names
+- Create (empty shells, filled in Tasks 5-6): every file in the spec's "Generated files" table, under `template/` with `.jinja` names and conditional names
 
 **Interfaces:**
 - `copier.yml`: `_subdirectory: template`, `_min_copier_version: "9.19"`, `_skip_if_exists: [pyproject.toml, .gitignore]`, `_message_after_copy` (run `uv lock`; repo settings from C13; when `pyproject.toml` existed, the groups to add).
@@ -141,7 +125,7 @@ Starts when VoxGarbler #91 is merged and v1.6.0 is tagged.
 - [ ] **Step 4: Run it.** Expected: the file-set checks pass.
 - [ ] **Step 5: Commit.** `feat(template): copier questions and file set`
 
-### Task 6: `ci.yml` and `dependabot.yml`
+### Task 5: `ci.yml` and `dependabot.yml`
 
 **Files:** `template/.github/workflows/ci.yml.jinja`, `template/.github/dependabot.yml.jinja`; test additions.
 
@@ -167,41 +151,39 @@ Starts when VoxGarbler #91 is merged and v1.6.0 is tagged.
 - [ ] **Step 4: Run them.** Expected: PASS.
 - [ ] **Step 5: Commit.** `feat(template): caller workflow and dependabot`
 
-### Task 7: hooks, rule configs, pyproject
+### Task 6: hooks, rule configs, pyproject
 
 **Files:** `template/.pre-commit-config.yaml.jinja`, `template/ruff.toml.jinja`, `template/pyrightconfig.json.jinja`, `template/pyproject.toml.jinja`, `template/.gitignore`; seeds in `tests/template-seed/` (`seed.py`, `seed.js`, `tests/test_seed.py`).
 
 **Interfaces:**
-- Hook order: `check-merge-conflict`, ruff-check (`--fix`) + ruff-format (`types_or: [python, pyi, jupyter]`), oxlint, gitleaks (product), `suppressions` (repo `https://github.com/Phlares/workflows`).
+- Hook order: `check-merge-conflict`, ruff-check (`--fix`) + ruff-format (`types_or: [python, pyi, jupyter]`), oxlint, `suppressions` (repo `https://github.com/Phlares/workflows`).
 - `pyproject.toml`:
   - `[project]` with `name` = destination folder name, `version = "0.0.0"`, `requires-python = ">={{ python_version }}"`
   - no `[build-system]`, so uv does not build the project (same effect as `package = false`)
   - `[dependency-groups]`: `lint = ["prek"]`; product + python adds `test = ["pytest"]` and `typecheck = ["pyright"]`
 
-- [ ] **Step 1: Check gitleaks under prek.** Run `prek run gitleaks --all-files` in a scratch repo with that hook (it is `language: golang`). If prek cannot build it on Ubuntu and Windows, stop and report. Do not switch to an unpinned binary.
-- [ ] **Step 2: Write the failing tests.** For each combination:
+- [ ] **Step 1: Write the failing tests.** For each combination:
   - Copy the seeds that match the languages.
   - Rewrite the suppression hook `repo:` to `$root` (the local repo holds the unpushed HEAD).
   - Run `uv lock`, `uv sync --locked --only-group lint` and `uv run --no-sync prek run --all-files`. Expected: exit 0.
   - Mutations, each one alone, then revert:
     - `# noqa: E501` on a clean line of `seed.py` → prek fails.
     - `// oxlint-disable-next-line no-debugger` on a clean line of `seed.js` → prek fails.
-    - Product only: a seeded AWS-style test key in `seed.py` → the gitleaks hook fails.
     - Product + python: `uv sync --locked --group typecheck`, then `uv run --no-sync pyright` passes. Add `x = 1  # pyright: ignore[reportGeneralTypeIssues]` → pyright fails.
     - Product + python: `uv sync --locked --group test` and `uv run --no-sync pytest` pass.
   - Value asserts: the ruff and pyright values from the Global Constraints; the oxlint args by tier.
   - Review Focus 2: put a `pyproject.toml` in the target dir before `copy`. It is byte-identical after the copy, and copier's output contains `[dependency-groups]`.
-- [ ] **Step 3: Run them.** Expected: FAIL.
-- [ ] **Step 4: Write the templates.**
-- [ ] **Step 5: Run them.** Expected: PASS.
-- [ ] **Step 6: Commit.** `feat(template): hooks, rule configs, pyproject`
+- [ ] **Step 2: Run them.** Expected: FAIL.
+- [ ] **Step 3: Write the templates.**
+- [ ] **Step 4: Run them.** Expected: PASS.
+- [ ] **Step 5: Commit.** `feat(template): hooks, rule configs, pyproject`
 
-### Task 8: update flow
+### Task 7: update flow
 
 **Files:** `tests/template.test.sh` (update section).
 
 - [ ] **Step 1: Write the failing tests.**
-  - In a temp clone of `$root`, tag the commit before Task 7 as `v0.0.1-test` and HEAD as `v0.0.2-test`.
+  - In a temp clone of `$root`, tag the commit before Task 6 as `v0.0.1-test` and HEAD as `v0.0.2-test`.
   - Generate at `v0.0.1-test` with `--vcs-ref`. `git init` and commit it.
   - Change the oxlint `rev` line as Dependabot would, and commit.
   - Run `copier update --defaults --vcs-ref v0.0.2-test`. Expected: the hand-changed rev survives, or the file holds conflict markers and `prek run check-merge-conflict --all-files` fails. Assert one of the two. Never both clean and reverted.
@@ -211,7 +193,7 @@ Starts when VoxGarbler #91 is merged and v1.6.0 is tagged.
 - [ ] **Step 4: Run them.** Expected: PASS.
 - [ ] **Step 5: Commit.** `test(template): copier update keeps pin edits`
 
-### Task 9: self-test job, README, release v1.7.0
+### Task 8: self-test job, README, release v1.7.0
 
 **Files:** `.github/workflows/self-test.yml` (job `template`), `README.md` (section "Template": `uvx copier@9.19.1 copy gh:Phlares/workflows <dir>`; tiers table; update flow C3), `pyproject.toml` version `1.7.0`.
 
@@ -227,7 +209,7 @@ Starts when VoxGarbler #91 is merged and v1.6.0 is tagged.
 
 ## Part D: live adopter
 
-### Task 10: regenerate claude-fix-sandbox
+### Task 9: regenerate claude-fix-sandbox
 
 - [ ] **Step 1: Generate.** Clone the sandbox to `Documents/dev/claude-fix-sandbox`. Make branch `ci/template`. Run `uvx copier@9.19.1 copy --vcs-ref v1.7.0 --overwrite -d tier=product -d languages=[node] -d target_os=ubuntu-latest gh:Phlares/workflows .`, then `uv lock`.
 - [ ] **Step 2: Check the diff.**
@@ -237,4 +219,4 @@ Starts when VoxGarbler #91 is merged and v1.6.0 is tagged.
   - `claude-fix.yml` triggers on `workflows: [CI]`, which matches the generated name.
 - [ ] **Step 3: Push the PR.** Expected: `lint` and `test` green. Mutation: add an `oxlint-disable-next-line` on a clean line → `lint` red. Revert with a new commit.
 - [ ] **Step 4: Review and merge.** Run `/code-review low` (generated config). The owner merges. Comment on #13: the live adopter is done. The live `copier update` proof runs at the next tag; put that on #13 as an open criterion.
-- [ ] **Step 5: Close out.** Tick the #29 criterion "#13 template carries the groups" and the #28 criterion "#13 template writes the Part 2 settings". Close #13 when Task 10 merges. #32 stays open for flashback and portfolio. Move the worktrees to `_ToRemove/` and list them for approval at the end.
+- [ ] **Step 5: Close out.** Tick the #29 criterion "#13 template carries the groups" and the #28 criterion "#13 template writes the Part 2 settings". Close #13 when Task 9 merges. #32 stays open for flashback and portfolio. Move the worktrees to `_ToRemove/` and list them for approval at the end.
