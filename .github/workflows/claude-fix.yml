@@ -16,6 +16,7 @@ on:
       node-version: { type: string, default: "" }
       python-version: { type: string, default: "" }
       zig-version: { type: string, default: "" }
+      uv-version: { type: string, default: "" }
       working-directory: { type: string, default: "." }
       install: { type: string, default: "" }
       env: { type: string, default: "" }
@@ -95,6 +96,7 @@ jobs:
           node-version: ${{ inputs.node-version }}
           python-version: ${{ inputs.python-version }}
           zig-version: ${{ inputs.zig-version }}
+          uv-version: ${{ inputs.uv-version }}
           working-directory: ${{ inputs.working-directory }}
           env: ${{ inputs.env }}
       # A failed install must not stop the fix: the failure may be the install.

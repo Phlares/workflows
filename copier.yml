@@ -1,0 +1,77 @@
+# Copier template for new repos: CI caller, Dependabot and hook config per
+# tier. Spec: docs/specs/2026-10-19-template-uv-design.md.
+# Copy: uvx copier@9.19.1 copy gh:Phlares/workflows <dir>
+_subdirectory: template
+_min_copier_version: "9.19"
+# Written once; copier update never touches them (C11).
+_skip_if_exists:
+  - pyproject.toml
+  - .gitignore
+# GitHub expressions use ${{ }}, so the template uses [[ ]] and [% %].
+_envops:
+  variable_start_string: "[["
+  variable_end_string: "]]"
+  block_start_string: "[%"
+  block_end_string: "%]"
+  keep_trailing_newline: true
+  trim_blocks: true
+  lstrip_blocks: true
+
+tier:
+  type: str
+  help: "prototype: hooks + CI lint. product: also tests and typecheck (repos that face the public)."
+  choices: [prototype, product]
+
+languages:
+  type: str
+  help: Languages to lint and test
+  multiselect: true
+  choices: [python, node]
+  validator: "[% if not languages %]Pick at least one language[% endif %]"
+
+default_branch:
+  type: str
+  default: main
+
+target_os:
+  type: str
+  help: Runner for the test jobs; also pyright's pythonPlatform
+  choices: [ubuntu-latest, windows-latest]
+  default: ubuntu-latest
+  when: "[[ tier == 'product' ]]"
+
+python_version:
+  type: str
+  help: Lowest supported Python; CI runs it (the lint job runs prek through uv)
+  default: "3.12"
+
+node_version:
+  type: str
+  default: "24"
+  when: "[[ 'node' in languages ]]"
+
+# Not asked; moves with template releases (C3).
+uv_version:
+  type: str
+  default: "0.13.1"
+  when: false
+
+_message_after_copy: |
+  Next steps:
+  1. uv lock  (CI installs with `uv sync --locked`; it fails until uv.lock exists)
+  2. uv sync --only-group lint && uv run --no-sync prek install --allow-missing-config
+  3. If pyproject.toml existed before this copy, copier left it alone. Add:
+       [dependency-groups]
+       lint = ["prek"]
+  [%- if tier == 'product' and 'python' in languages %]
+
+       test = ["pytest"]
+       typecheck = ["pyright"]
+  [%- endif %]
+
+  4. Repo settings (copier writes files only): turn on Dependabot alerts and
+     security updates; make the CI checks required on [[ default_branch ]].
+_message_after_update: |
+  If the tier or languages changed, compare pyproject.toml [dependency-groups]
+  with the jobs in .github/workflows/ci.yml (copier does not edit
+  pyproject.toml after the first copy), then run `uv lock`.

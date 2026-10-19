@@ -1,0 +1,62 @@
+name: CI
+
+# From the Phlares/workflows copier template ([[ tier ]] tier). Change the
+# structure with `copier update`; Dependabot moves the pins. No path filter:
+# a required check that skips never reports and blocks the PR.
+on:
+  pull_request:
+  push:
+    branches: ["[[ default_branch ]]"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    uses: Phlares/workflows/.github/workflows/check.yml@[[ _copier_conf.vcs_ref_hash ]] # [[ _copier_answers._commit ]]
+    with:
+      name: lint
+      python-version: "[[ python_version ]]"
+      uv-version: [[ uv_version ]]
+      timeout-minutes: 5
+      install: uv sync --locked --only-group lint
+      run: uv run --no-sync prek run --all-files --show-diff-on-failure
+[% if tier == 'product' and 'python' in languages %]
+
+  test-py:
+    uses: Phlares/workflows/.github/workflows/check.yml@[[ _copier_conf.vcs_ref_hash ]] # [[ _copier_answers._commit ]]
+    with:
+      name: pytest
+      runs-on: [[ target_os ]]
+      python-version: "[[ python_version ]]"
+      uv-version: [[ uv_version ]]
+      timeout-minutes: 5
+      install: uv sync --locked --group test
+      run: uv run --no-sync pytest -q
+
+  typecheck:
+    uses: Phlares/workflows/.github/workflows/check.yml@[[ _copier_conf.vcs_ref_hash ]] # [[ _copier_answers._commit ]]
+    with:
+      name: typecheck
+      python-version: "[[ python_version ]]"
+      uv-version: [[ uv_version ]]
+      timeout-minutes: 5
+      install: uv sync --locked --group typecheck
+      run: uv run --no-sync pyright
+[% endif %]
+[% if tier == 'product' and 'node' in languages %]
+
+  test-js:
+    uses: Phlares/workflows/.github/workflows/check.yml@[[ _copier_conf.vcs_ref_hash ]] # [[ _copier_answers._commit ]]
+    with:
+      name: test
+      runs-on: [[ target_os ]]
+      node-version: "[[ node_version ]]"
+      timeout-minutes: 5
+      install: npm ci
+      run: npm test
+[% endif %]

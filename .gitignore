@@ -1,6 +1,7 @@
 _ToRemove/
 node_modules/
 __pycache__/
+.venv/
 .pytest_cache/
 zig-out/
 .zig-cache/
