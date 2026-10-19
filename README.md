@@ -209,6 +209,8 @@ Dependabot's `pre-commit` updates move `rev`.
   with no reason fails. No file means a baseline of 0.
 - When a count drops, the hook lowers the line (or drops it at 0), writes
   the file, and fails, like a formatter. Stage the file and commit again.
+  It lowers only when nothing else fails, so a renamed file keeps its line
+  until you move the line to the new path by hand.
   `--update` does the same and exits 0. Nothing raises a count; a new
   kept site is a hand edit with its reason.
 

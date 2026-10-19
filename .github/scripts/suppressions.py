@@ -140,7 +140,8 @@ def load(text):
 
 def main():
     args = sys.argv[1:]
-    sys.stdout.reconfigure(newline="\n")  # LF on Windows too
+    # Windows pipes default to CRLF and the ANSI code page.
+    sys.stdout.reconfigure(newline="\n", encoding="utf-8", errors="replace")
     if "--markers" in args:
         print("\n".join(m[0] for m in MARKERS))
         return 0
@@ -150,12 +151,10 @@ def main():
     os.chdir(top.stdout.decode().strip())
     counts, forbidden = scan(tracked())
     try:
-        with open(BASELINE, encoding="utf-8") as f:
+        with open(BASELINE, encoding="utf-8-sig") as f:
             baseline, errors = load(f.read())
     except FileNotFoundError:
         baseline, errors = {}, []
-    # A file with bad lines is never rewritten: the rewrite would drop them.
-    rewritable = not errors
     for path, n, name in forbidden:
         errors.append(f"{path}:{n}: {name} always fails")
     for key, lines in sorted(counts.items()):
@@ -171,7 +170,9 @@ def main():
         if min(found, allowed):
             lowered[key] = (min(found, allowed), reason)
     stale = lowered != baseline
-    if stale and rewritable:
+    # Lower only on an otherwise clean run: a bad line, or a rename that
+    # shows as one count up and one down, would lose its reason.
+    if stale and not errors:
         write(lowered)
         print(f"{BASELINE} {'lowered' if lowered else 'removed'}; stage it")
     if errors:

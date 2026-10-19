@@ -133,13 +133,16 @@ check "the rewrite is sorted" test "$(cat .suppressions)" = "a.py${T}noqa${T}1${
 
 repo; put a.py 'import os  # noqa: E1'; base "a.py${T}noqa${T}1${T} "; hook
 check "an empty reason fails" test "$rc" -eq 1 && check "  and names it" has_out "reason"
-base "a.py${T}noqa${T}1"; hook
-check "a 3-field line fails" test "$rc" -eq 1
-for bad in "a.py${T}noqa${T}0${T}x" "a.py${T}noqa${T}x${T}x" "a.py${T}nope${T}1${T}x"; do
-  base "$bad"; hook; check "bad line fails: ${bad//$T/ | }" test "$rc" -eq 1
-done
+while IFS='|' read -r line want; do
+  base "${line//,/$T}"; hook; check "bad line fails: $want" has_out ".suppressions:1: $want"
+done <<'EOF'
+a.py,noqa,1|want path
+a.py,noqa,0,x|count must be
+a.py,noqa,x,x|count must be
+a.py,nope,1,x|'nope' is not a counted marker
+EOF
 base "a.py${T}noqa${T}1${T}x" "a.py${T}noqa${T}1${T}x"; hook
-check "a duplicate line fails" test "$rc" -eq 1
+check "a duplicate line fails" has_out ".suppressions:2: duplicate line"
 base "a.py${T}noqa${T}3${T}x" "b.py${T}noqa${T}1${T}"; hook
 check "a file with a bad line is not rewritten" test "$rc" -eq 1 -a "$(cat .suppressions)" = "a.py${T}noqa${T}3${T}x"$'\n'"b.py${T}noqa${T}1${T}"
 
@@ -151,6 +154,16 @@ check "a CRLF baseline with a blank line parses" test "$rc" -eq 0 || echo "     
 
 repo; put a.py 'import os  # noqa: E1'; base "a.py${T}noqa${T}2${T}a${T}b"; hook
 check "a tab inside the reason survives the rewrite" test "$(cat .suppressions)" = "a.py${T}noqa${T}1${T}a${T}b"
+
+repo; put b.py 'import os  # noqa: E1'; base "a.py${T}noqa${T}1${T}keep me"; hook
+check "a rename keeps the old line while counts fail" test "$rc" -eq 1 -a "$(cat .suppressions)" = "a.py${T}noqa${T}1${T}keep me"
+
+repo; put a.py 'import os  # noqa: E1'; printf '\xef\xbb\xbfa.py\tnoqa\t1\twhy\n' > .suppressions; hook
+check "a BOM baseline parses" test "$rc" -eq 0 || echo "     $out"
+
+wide=$(printf '\xe6\x97\xa5.py')
+repo; put "$wide" 'import os  # noqa: E1'; hook
+check "a non-ASCII path prints" has_out "$wide: noqa: 1 > baseline 0" || echo "     $out"
 
 repo; put src/a.py 'import os  # noqa: E1'; base "src/a.py${T}noqa${T}1${T}why"; cd src || exit 1; hook
 check "a run from a subfolder uses the repo root" test "$rc" -eq 0 || echo "     $out"
