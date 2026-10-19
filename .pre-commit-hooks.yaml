@@ -1,0 +1,8 @@
+- id: suppressions
+  name: suppression baseline
+  description: Fails when suppression comments rise above the .suppressions baseline, and lowers the baseline when they drop.
+  entry: suppressions
+  language: python
+  pass_filenames: false
+  always_run: true
+  require_serial: true

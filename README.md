@@ -179,6 +179,41 @@ Rules:
 Both workflows fetch this repo into `.wf/` at the called commit. It holds
 only `.github/actions/` and `.github/scripts/`, and git ignores it.
 
+## Suppression guard
+
+A prek hook that counts suppression comments in tracked files and fails
+when a count rises above the repo's `.suppressions` baseline. Add it to
+`.pre-commit-config.yaml`; the `lint` job and the commit hook then run it.
+Dependabot's `pre-commit` updates move `rev`.
+
+```yaml
+  - repo: https://github.com/Phlares/workflows
+    rev: <full sha>  # frozen: v1.5.0
+    hooks:
+      - id: suppressions
+```
+
+- What counts: the `MARKERS` table in `.github/scripts/suppressions.py`.
+  Each row is a name, file globs, a regex, and a kind. The regex needs the
+  comment opener before the marker, so text in a string with no opener
+  does not count. Test skips (`.skip`, `.skipIf`, `pytest.mark.skip`,
+  `pytest.importorskip`, …) count.
+- Not scanned: files no row's globs select, such as `*.md` and files with
+  no extension.
+- Always fail, whatever the baseline: forms with no rule list (bare
+  `type: ignore`, `pyright: ignore` without `[rule]`, blanket `noqa`,
+  `ruff: noqa` without codes, `eslint-disable`, `oxlint-disable` or
+  `stylelint-disable` with no rule) and `.only`.
+- `.suppressions`: one `path<TAB>marker<TAB>count<TAB>reason` line per
+  kept site, with no header. `marker` is a name from `--markers`. A line
+  with no reason fails. No file means a baseline of 0.
+- When a count drops, the hook lowers the line (or drops it at 0), writes
+  the file, and fails, like a formatter. Stage the file and commit again.
+  It lowers only when nothing else fails, so a renamed file keeps its line
+  until you move the line to the new path by hand.
+  `--update` does the same and exits 0. Nothing raises a count; a new
+  kept site is a hand edit with its reason.
+
 ## Versioning
 
 Semver tags. A breaking input change bumps the major version. Each release
