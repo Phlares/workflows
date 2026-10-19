@@ -13,6 +13,7 @@ import subprocess
 import sys
 
 COUNT, FORBID = "count", "forbid"
+BASELINE = ".suppressions"
 
 PY = ("*.py", "*.pyi")
 JS = ("*.js", "*.mjs", "*.cjs", "*.jsx", "*.ts", "*.mts", "*.cts", "*.tsx", "*.vue", "*.svelte")
@@ -99,19 +100,77 @@ def tracked():
     return [p for p in out.decode("utf-8").split("\0") if p]
 
 
+def load(text):
+    """Parse .suppressions: ({(path, name): (count, reason)}, [error, ...])."""
+    counted = {m[0] for m in MARKERS if m[3] == COUNT}
+    baseline, errors = {}, []
+    for n, line in enumerate(text.split("\n"), 1):
+        if not line:
+            continue
+        fields = line.split("\t", 3)
+        if len(fields) != 4:
+            errors.append(f"{BASELINE}:{n}: want path<TAB>marker<TAB>count<TAB>reason")
+            continue
+        path, name, count, reason = fields
+        if name not in counted:
+            errors.append(f"{BASELINE}:{n}: {name!r} is not a counted marker")
+        elif not count.isdigit() or int(count) < 1:
+            errors.append(f"{BASELINE}:{n}: count must be a whole number of at least 1")
+        elif not reason.strip():
+            errors.append(f"{BASELINE}:{n}: no reason given")
+        elif (path, name) in baseline:
+            errors.append(f"{BASELINE}:{n}: duplicate line for {path} {name}")
+        else:
+            baseline[(path, name)] = (int(count), reason)
+    return baseline, errors
+
+
 def main(argv=None):
     args = sys.argv[1:] if argv is None else argv
     sys.stdout.reconfigure(newline="\n")  # LF on Windows too
     if "--markers" in args:
         print("\n".join(m[0] for m in MARKERS))
         return 0
+    top = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, check=True)
+    os.chdir(top.stdout.decode().strip())
     counts, forbidden = scan(tracked())
-    for (path, name), lines in sorted(counts.items()):
-        for n in lines:
-            print(f"{path}:{n}: {name}")
+    try:
+        with open(BASELINE, encoding="utf-8") as f:
+            baseline, errors = load(f.read())
+    except FileNotFoundError:
+        baseline, errors = {}, []
+    # A file with bad lines is never rewritten: the rewrite would drop them.
+    rewritable = not errors
     for path, n, name in forbidden:
-        print(f"{path}:{n}: {name} always fails")
-    return 1 if counts or forbidden else 0
+        errors.append(f"{path}:{n}: {name} always fails")
+    for key, lines in sorted(counts.items()):
+        allowed = baseline.get(key, (0, ""))[0]
+        if len(lines) > allowed:
+            errors.append(f"{key[0]}: {key[1]}: {len(lines)} > baseline {allowed}")
+            errors.extend(f"  {key[0]}:{n}: {key[1]}" for n in lines)
+    lowered = {}
+    for key, (allowed, reason) in sorted(baseline.items()):
+        found = len(counts.get(key, ()))
+        if found < allowed:
+            print(f"{key[0]}: {key[1]}: {allowed} -> {found}")
+        if min(found, allowed):
+            lowered[key] = (min(found, allowed), reason)
+    stale = lowered != baseline
+    if stale and rewritable:
+        write(lowered)
+        print(f"{BASELINE} lowered; stage it" if lowered else f"{BASELINE} removed; stage it")
+    if errors:
+        print("\n".join(errors))
+    return 1 if errors or (stale and "--update" not in args) else 0
+
+
+def write(baseline):
+    if not baseline:
+        os.remove(BASELINE)
+        return
+    with open(BASELINE, "w", encoding="utf-8", newline="\n") as f:
+        for (path, name), (count, reason) in baseline.items():
+            f.write(f"{path}\t{name}\t{count}\t{reason}\n")
 
 
 if __name__ == "__main__":

@@ -92,4 +92,66 @@ git update-index --add --cacheinfo "120000,$blob,link.py"
 mkdir dir.py; git update-index --add --cacheinfo "160000,$blob,dir.py"
 hook
 check "bad bytes, symlinks and submodules do not crash the scan" test "$(hits)" = "a.py:2: noqa" || echo "     $out"
+
+# Baseline file.
+T=$'\t'
+base() { printf '%s\n' "$@" > .suppressions; }
+has_out() { [[ $out == *"$1"* ]]; }
+
+repo; hook
+check "no file and no markers passes" test "$rc" -eq 0
+
+repo; put a.py 'import os  # noqa: E1'; hook
+check "no file means a baseline of 0" has_out "a.py: noqa: 1 > baseline 0"
+
+repo; put a.py 'import os  # noqa: E1'; base "a.py${T}noqa${T}1${T}why"; hook
+check "at baseline passes and leaves the file" test "$rc" -eq 0 -a "$(cat .suppressions)" = "a.py${T}noqa${T}1${T}why"
+
+repo; printf '%s\n' 'a  # noqa: E1' 'b  # noqa: E2' > a.py; git add a.py; base "a.py${T}noqa${T}1${T}why"; hook
+check "above baseline fails, file unchanged" test "$rc" -eq 1 -a "$(cat .suppressions)" = "a.py${T}noqa${T}1${T}why"
+check "above baseline lists every hit" test "$(nhits)" -eq 2
+hook --update
+check "--update never raises a count" test "$rc" -eq 1 -a "$(cat .suppressions)" = "a.py${T}noqa${T}1${T}why"
+
+repo; put a.py 'import os  # noqa: E1'; base "a.py${T}noqa${T}3${T}why"; hook
+check "below baseline fails and says so" test "$rc" -eq 1 && check "  with the drop" has_out "a.py: noqa: 3 -> 1"
+check "below baseline rewrites the count" test "$(cat .suppressions)" = "a.py${T}noqa${T}1${T}why"
+
+repo; put a.py 'import os  # noqa: E1'; base "a.py${T}noqa${T}3${T}why"; hook --update
+check "--update on a drop exits 0" test "$rc" -eq 0 -a "$(cat .suppressions)" = "a.py${T}noqa${T}1${T}why"
+
+repo; put a.py 'x = 1'; base "a.py${T}noqa${T}1${T}why"; hook
+check "a drop to 0 removes the empty file" test "$rc" -eq 1 -a ! -e .suppressions
+
+repo; put a.py 'import os  # noqa: E1'
+base "gone.py${T}noqa${T}2${T}old" "a.py${T}noqa${T}1${T}why"; hook
+check "a deleted file's line is dropped" test "$(cat .suppressions)" = "a.py${T}noqa${T}1${T}why"
+
+repo; put a.py 'import os  # noqa: E1'; put b.py 'import os  # noqa: E1'
+base "b.py${T}noqa${T}2${T}y" "a.py${T}noqa${T}1${T}x"; hook
+check "the rewrite is sorted" test "$(cat .suppressions)" = "a.py${T}noqa${T}1${T}x"$'\n'"b.py${T}noqa${T}1${T}y"
+
+repo; put a.py 'import os  # noqa: E1'; base "a.py${T}noqa${T}1${T} "; hook
+check "an empty reason fails" test "$rc" -eq 1 && check "  and names it" has_out "reason"
+base "a.py${T}noqa${T}1"; hook
+check "a 3-field line fails" test "$rc" -eq 1
+for bad in "a.py${T}noqa${T}0${T}x" "a.py${T}noqa${T}x${T}x" "a.py${T}nope${T}1${T}x"; do
+  base "$bad"; hook; check "bad line fails: ${bad//$T/ | }" test "$rc" -eq 1
+done
+base "a.py${T}noqa${T}1${T}x" "a.py${T}noqa${T}1${T}x"; hook
+check "a duplicate line fails" test "$rc" -eq 1
+base "a.py${T}noqa${T}3${T}x" "b.py${T}noqa${T}1${T}"; hook
+check "a file with a bad line is not rewritten" test "$rc" -eq 1 -a "$(cat .suppressions)" = "a.py${T}noqa${T}3${T}x"$'\n'"b.py${T}noqa${T}1${T}"
+
+repo; put a.py 'x = 1  # type: ignore'; base "a.py${T}bare type: ignore${T}1${T}x"; hook
+check "an always-fail form ignores the baseline" test "$rc" -eq 1 && check "  and says so" has_out "always fails"
+
+repo; put a.py 'import os  # noqa: E1'; printf 'a.py\tnoqa\t1\twhy\r\n\r\n' > .suppressions; hook
+check "a CRLF baseline with a blank line parses" test "$rc" -eq 0 || echo "     $out"
+
+repo; put a.py 'import os  # noqa: E1'; base "a.py${T}noqa${T}2${T}a${T}b"; hook
+check "a tab inside the reason survives the rewrite" test "$(cat .suppressions)" = "a.py${T}noqa${T}1${T}a${T}b"
+
+repo; put src/a.py 'import os  # noqa: E1'; base "src/a.py${T}noqa${T}1${T}why"; cd src || exit 1; hook
+check "a run from a subfolder uses the repo root" test "$rc" -eq 0 || echo "     $out"
 finish
