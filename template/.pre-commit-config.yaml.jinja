@@ -1,0 +1,37 @@
+# Commit hook and CI lint job (ci.yml `lint`) run this one file with prek.
+# Install once per checkout: prek install --allow-missing-config
+# (the flag keeps commits working on branches older than this file).
+# Every rev is a commit hash; Dependabot moves it with its `# frozen:` tag.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c  # frozen: v6.0.0
+    hooks:
+      # copier update writes conflicts as inline markers outside a git merge.
+      - id: check-merge-conflict
+        args: [--assume-in-merge]
+[% if 'python' in languages %]
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: 38bfb07c0c64c304f47eb52090f8288150c77730  # frozen: v0.17.1
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+        # The upstream hook also formats code blocks in Markdown files.
+        types_or: [python, pyi, jupyter]
+[% endif %]
+[% if 'node' in languages %]
+  - repo: https://github.com/oxc-project/mirrors-oxlint
+    rev: 5b56cf853a2b0e1e276773824e00111e6312cb09  # frozen: v1.88.0
+    hooks:
+      - id: oxlint
+        args:
+          - --report-unused-disable-directives-severity=error
+[% if tier == 'product' %]
+          - --deny-warnings
+[% endif %]
+[% endif %]
+  # Suppression comments stay at the .suppressions baseline (0 when absent).
+  - repo: https://github.com/Phlares/workflows
+    rev: [[ _copier_conf.vcs_ref_hash ]]  # frozen: [[ _copier_answers._commit ]]
+    hooks:
+      - id: suppressions
