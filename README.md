@@ -31,6 +31,7 @@ The check is named `<caller job> / <name> (<shard>)`, for example
 | `node-version` | empty | Empty = not installed. npm cache needs `<working-directory>/package-lock.json`; without it the job fails in step `setup` |
 | `python-version` | empty | Empty = not installed. pip cache needs `pyproject.toml` or `requirements*.txt` in `<working-directory>`; without them the job fails in step `setup` |
 | `zig-version` | empty | Empty = not installed |
+| `uv-version` | empty | Empty = not installed. The uv cache is keyed on `<working-directory>/uv.lock` |
 | `working-directory` | `.` | Where `install` and `run` execute |
 | `install` | empty | Commands run before `run` |
 | `run` | required | Commands; stops at the first failure |
@@ -64,6 +65,19 @@ Python with a Zig build step on Windows:
         (cd core && zig build -Doptimize=ReleaseSafe)
         pytest tests/unit
 ```
+
+Python with a uv.lock (one dependency group per job):
+```yaml
+    with:
+      python-version: "3.12"
+      uv-version: 0.13.1
+      install: uv sync --locked --only-group lint
+      run: uv run --no-sync prek run --all-files --show-diff-on-failure
+```
+
+`--locked` fails the install when `uv.lock` does not match `pyproject.toml`,
+and uv checks every hash in the lock. `--no-sync` stops `uv run` from
+changing the environment after the install step.
 
 Zig only:
 ```yaml
@@ -129,7 +143,7 @@ five labels below.
 | `max-turns` | `50` | Turn limit for one run |
 | `timeout-minutes` | `20` | Limit for the fix step and for `install` |
 | `runs-on` | `ubuntu-latest` | Runner label |
-| `node-version`, `python-version`, `zig-version`, `working-directory`, `install`, `env` | as `check.yml` | Setup before tests |
+| `node-version`, `python-version`, `zig-version`, `uv-version`, `working-directory`, `install`, `env` | as `check.yml` | Setup before tests |
 | `test-command` | empty | Command Claude may run with specific test names, in PR runs on a collaborator's PR only. Empty = no setup and no tests in the fix job |
 | `auto-tries` | `2` | Auto fix tries per PR. `0` = stop on the first auto failure |
 

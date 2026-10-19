@@ -4,6 +4,7 @@ inputs:
   node-version: { description: Node version; empty skips Node, default: "" }
   python-version: { description: Python version; empty skips Python, default: "" }
   zig-version: { description: Zig version; empty skips Zig, default: "" }
+  uv-version: { description: uv version; empty skips uv, default: "" }
   working-directory: { description: Folder holding the lock files, default: "." }
   env: { description: KEY=VALUE lines, default: "" }
 runs:
@@ -27,6 +28,12 @@ runs:
       uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
       with:
         version: ${{ inputs.zig-version }}
+    - if: inputs.uv-version != ''
+      uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      with:
+        version: ${{ inputs.uv-version }}
+        enable-cache: true
+        cache-dependency-glob: ${{ inputs.working-directory }}/uv.lock
     # Not $GITHUB_ENV: the runner refuses NODE_OPTIONS there. env.sh is for
     # shell steps; env.json is for Claude Code settings in claude-fix.yml.
     - name: env

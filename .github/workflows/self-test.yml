@@ -74,6 +74,26 @@ jobs:
         zig build-exe hello.zig -femit-bin=zig-out/hello.exe
         pytest -q -m "not slow and not audio_hw"
 
+  py-uv:
+    uses: ./.github/workflows/check.yml
+    with:
+      name: py-uv
+      python-version: "3.12"
+      uv-version: 0.13.1
+      working-directory: fixtures/py-uv
+      install: uv sync --locked --only-group test
+      run: uv run --no-sync pytest -q
+
+  fail-uv-drift:
+    uses: ./.github/workflows/check.yml
+    with:
+      name: fail-uv-drift
+      python-version: "3.12"
+      uv-version: 0.13.1
+      working-directory: fixtures/fail-uv-drift
+      install: uv sync --locked --only-group test
+      run: echo "never reached"
+
   fail:
     uses: ./.github/workflows/check.yml
     with:
@@ -195,7 +215,7 @@ jobs:
   # It is the one required check on main.
   verify:
     if: always()
-    needs: [js, js-sub, setup-composite, py-zig, fail, fail-win, fail-install, fail-setup, fail-odd, timeout, fail-raw, fix-unit, fix-collect, lint]
+    needs: [js, js-sub, setup-composite, py-zig, py-uv, fail-uv-drift, fail, fail-win, fail-install, fail-setup, fail-odd, timeout, fail-raw, fix-unit, fix-collect, lint]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -207,7 +227,8 @@ jobs:
         run: |
           jq -e '
             .js.result == "success" and ."js-sub".result == "success" and ."setup-composite".result == "success" and
-            ."py-zig".result == "success" and .lint.result == "success" and
+            ."py-zig".result == "success" and ."py-uv".result == "success" and .lint.result == "success" and
+            ."fail-uv-drift".result == "failure" and
             .fail.result == "failure" and ."fail-win".result == "failure" and
             ."fail-install".result == "failure" and ."fail-setup".result == "failure" and
             ."fail-odd".result == "failure" and .timeout.result == "failure" and
@@ -232,11 +253,12 @@ jobs:
           check fail run "coloured"
           check fail-win run "expected failure from fixture"
           check fail-install install "npm error"
+          check fail-uv-drift install "needs to be updated"
           check timeout run "started sleep"
           check fail-setup setup "not KEY=VALUE"
           jq -e '.job == "odd/name: x, y" and .shard == "a" and .shard_total == 1 and .step == "run" and
             (.tail | index("odd failure")) != null' reports/ci-failure-odd-name--x--y-a/report.json
-          test "$(find reports -mindepth 1 -maxdepth 1 | wc -l)" = 6
+          test "$(find reports -mindepth 1 -maxdepth 1 | wc -l)" = 7
           annotated() { # $1 job display name, $2 jq test on its check.yml annotation
             id=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" \
               --jq ".jobs[] | select(.name == \"$1\") | .id")
