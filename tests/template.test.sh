@@ -10,7 +10,9 @@ copier=(uvx -q copier@9.19.1)
 # on top, so the generating commit (C2) exists and dirty edits are tested.
 tpl="$tmp/tpl"
 git clone -q --no-local "$root" "$tpl"
-cp -r "$root/template" "$root/copier.yml" "$tpl/" 2>/dev/null
+# Move the committed template aside so files deleted in the working tree go too.
+mv "$tpl/template" "$tmp/template.committed"
+cp -r "$root/template" "$root/copier.yml" "$tpl/"
 git -C "$tpl" add -A && git -C "$tpl" -c user.name=t -c user.email=t@t commit -qm wip --allow-empty
 sha=$(git -C "$tpl" rev-parse HEAD)
 
@@ -32,7 +34,6 @@ combos=("prototype:python" "prototype:node" "prototype:python, node" "product:py
 dir() { local s=${1//, /-}; echo "${s/:/-}"; }
 
 yq() { uv run -q --no-project --with pyyaml==6.0.3 python "$root/tests/yamlq.py" "$@" | tr -d '\r'; }
-has() { grep -qF -- "$2" "$tmp/$1"; } # $1 path under $tmp, $2 fixed text
 # Expected jobs: lint always; product adds pytest + typecheck (python), test (node).
 expect_jobs() {
   local j=(lint)
@@ -48,7 +49,11 @@ for c in "${combos[@]}"; do
   check "$d file set" test "$(files "$d")" = "$(expect "$tier" "$langs")"
 
   ci="$tmp/$d/.github/workflows/ci.yml" dep="$tmp/$d/.github/dependabot.yml"
-  check "$d ci pins the generating commit" test "$(grep -c "check.yml@$sha" "$ci")" -ge 1
+  check "$d ci pins the generating commit" grep -qF "check.yml@$sha" "$ci"
+  check "$d guard pins the generating commit" grep -qF "rev: $sha" "$tmp/$d/.pre-commit-config.yaml"
+  for j in test-py typecheck; do
+    yq "$ci" jobs | grep -qw "$j" && check "$d $j installs from the lock" test "$(yq "$ci" job "$j" install)" = "uv sync --locked --group ${j%-py}"
+  done
   check "$d ci jobs" test "$(yq "$ci" jobs)" = "$(expect_jobs "$tier" "$langs")"
   check "$d ci actionlint" "${ACTIONLINT:-actionlint}" -shellcheck= "$ci"
   check "$d ci lint install" test "$(yq "$ci" job lint install)" = "uv sync --locked --only-group lint"
@@ -73,13 +78,15 @@ seed() { # $1 dir, $2 languages
   (cd "$d" && git init -q . && git config core.autocrlf false && uv lock -q && git add -A)
 }
 in_dir() { local d="$tmp/$1"; shift; (cd "$d" && "$@") > "$tmp/out.log" 2>&1; }
-lint() { in_dir "$1" sh -c 'uv sync -q --locked --only-group lint && git add -A && uv run --no-sync prek run --all-files'; }
+lint() { # $1 dir, $2 hook id (empty = all hooks)
+  in_dir "$1" sh -c "uv sync -q --locked --only-group lint && git add -A && uv run --no-sync prek run ${2:-} --all-files"
+}
 fails() { ! "$@"; }
-mutate() { # $1 dir, $2 file, $3 line to prepend; succeeds when lint then fails; restores the file
-  local d="$tmp/$1" file=$2 rc=0
+mutate() { # $1 dir, $2 hook id, $3 file, $4 line to prepend; succeeds when that hook then fails; restores the file
+  local d="$tmp/$1" hook=$2 file=$3 rc=0
   cp "$d/$file" "$tmp/keep"
-  printf '%s\n' "$3" | cat - "$tmp/keep" > "$d/$file"
-  lint "$1" || rc=1
+  printf '%s\n' "$4" | cat - "$tmp/keep" > "$d/$file"
+  lint "$1" "$hook" || rc=1
   cp "$tmp/keep" "$d/$file"
   return $((1 - rc))
 }
@@ -98,7 +105,7 @@ for c in "${combos[@]}"; do
   check "$d pyproject lint group" val "$d/pyproject.toml" 'lint = ["prek"]'
   check "$d pyproject python floor" val "$d/pyproject.toml" 'requires-python = ">=3.12"'
   case $langs in *python*)
-    check "$d noqa fails lint" mutate "$d" seed.py "# noqa: E501"
+    check "$d unused noqa fails ruff (RUF100)" mutate "$d" ruff-check seed.py "# noqa: E501"
     if [ "$tier" = product ]; then
       check "$d ruff product select" val "$d/ruff.toml" 'select = ["E", "F", "W", "I", "B", "UP", "RUF100", "PGH004"]'
       check "$d ruff product ignore" val "$d/ruff.toml" 'ignore = ["E501"]'
@@ -107,12 +114,12 @@ for c in "${combos[@]}"; do
     fi ;;
   esac
   case $langs in *node*)
-    check "$d unused oxlint directive fails lint" mutate "$d" seed.js "// oxlint-disable-next-line no-debugger"
+    check "$d unused oxlint directive fails oxlint" mutate "$d" oxlint seed.js "// oxlint-disable-next-line no-debugger"
     check "$d oxlint unused directives are errors" val "$d/.pre-commit-config.yaml" "          - --report-unused-disable-directives-severity=error"
     if [ "$tier" = product ]; then
       check "$d oxlint deny warnings" val "$d/.pre-commit-config.yaml" "          - --deny-warnings"
     else
-      check "$d prototype allows warnings" fails has "$d/.pre-commit-config.yaml" "--deny-warnings"
+      check "$d prototype allows warnings" fails grep -qF -- "--deny-warnings" "$tmp/$d/.pre-commit-config.yaml"
     fi ;;
   esac
   case "$tier $langs" in product*python*)
@@ -122,8 +129,10 @@ for c in "${combos[@]}"; do
     check "$d pyright stale ignore is an error" val "$pc" '  "reportUnnecessaryTypeIgnoreComment": "error",'
     check "$d pyright version" val "$pc" '  "pythonVersion": "3.12",'
     check "$d pyright platform" val "$pc" '  "pythonPlatform": "Linux",'
-    check "$d pytest passes" in_dir "$d" sh -c 'uv sync -q --locked --group test && uv run --no-sync pytest -q'
-    check "$d pyright passes" in_dir "$d" sh -c 'uv sync -q --locked --group typecheck && uv run --no-sync pyright'
+    ci="$tmp/$d/.github/workflows/ci.yml"
+    for j in test-py typecheck; do
+      check "$d $j job passes" in_dir "$d" sh -c "$(yq "$ci" job $j install) && $(yq "$ci" job $j run)"
+    done
     printf 'VALUE = 1  # pyright: ignore[reportGeneralTypeIssues]\n' > "$tmp/$d/stale.py"
     check "$d stale pyright ignore fails" fails in_dir "$d" uv run --no-sync pyright
     rm "$tmp/$d/stale.py" ;;
@@ -134,9 +143,11 @@ done
 # names the groups to add.
 mkdir -p "$tmp/has-pyproject" && printf '[project]\nname = "mine"\n' > "$tmp/has-pyproject/pyproject.toml"
 cp "$tmp/has-pyproject/pyproject.toml" "$tmp/mine.toml"
-"${copier[@]}" copy --defaults --vcs-ref HEAD -d tier=product -d "languages=[python]" "$tpl" "$tmp/has-pyproject" > "$tmp/msg.log" 2>&1
+copy_msg() { "${copier[@]}" copy --defaults --vcs-ref HEAD -d tier=product -d "languages=[python]" "$tpl" "$tmp/has-pyproject" > "$tmp/msg.log" 2>&1; }
+check "copy over an existing pyproject" copy_msg
 check "existing pyproject kept" cmp -s "$tmp/mine.toml" "$tmp/has-pyproject/pyproject.toml"
-check "message names the groups" grep -qF '[dependency-groups]' "$tmp/msg.log"
+check "message names the groups" grep -qF 'typecheck = ["pyright"]' "$tmp/msg.log"
+check "message installs prek before using it" grep -qF 'uv sync --only-group lint && uv run --no-sync prek install' "$tmp/msg.log"
 
 # Review Focus 3 and 5: both test jobs have distinct names; Windows target
 # moves the test jobs only.
@@ -154,6 +165,8 @@ check "windows: pyright platform" val win/pyrightconfig.json '  "pythonPlatform"
 tpl2="$tmp/tpl2"
 git clone -q --no-local "$tpl" "$tpl2"
 gitc() { git -C "$1" -c user.name=t -c user.email=t@t "${@:2}"; }
+# Only the two test tags: the clone also holds this repo's tags, which predate the template.
+for t in $(git -C "$tpl2" tag); do git -C "$tpl2" tag -d "$t" > /dev/null; done
 gitc "$tpl2" tag v0.0.1
 printf '%s\n' "# probe: template v2" | cat - "$tpl2/template/.pre-commit-config.yaml.jinja" > "$tmp/v2" &&
   mv "$tmp/v2" "$tpl2/template/.pre-commit-config.yaml.jinja"
@@ -187,6 +200,11 @@ check "tier change runs" update tier -d tier=product
 check "tier change: pyrightconfig.json" test -f "$tmp/tier/pyrightconfig.json"
 check "tier change: product ruff rules" val tier/ruff.toml 'select = ["E", "F", "W", "I", "B", "UP", "RUF100", "PGH004"]'
 check "tier change: typecheck job" test "$(yq "$tmp/tier/.github/workflows/ci.yml" jobs)" = "lint test-py typecheck"
-check "tier change: message names the groups" grep -qF "[dependency-groups]" "$tmp/tier.update.log"
+check "tier change: message points at the groups" grep -qF "[dependency-groups]" "$tmp/tier.update.log"
+
+# A copy with no --vcs-ref takes the newest tag; the pin comments name it.
+check "copy from the newest tag" "${copier[@]}" copy --quiet --defaults -d tier=prototype -d "languages=[python]" "$tpl2" "$tmp/notag"
+check "ci pin comment names the tag" grep -qE "check.yml@[0-9a-f]{40} # v0.0.2$" "$tmp/notag/.github/workflows/ci.yml"
+check "guard rev comment names the tag" grep -qE "rev: [0-9a-f]{40}  # frozen: v0.0.2$" "$tmp/notag/.pre-commit-config.yaml"
 
 finish

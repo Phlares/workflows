@@ -59,7 +59,7 @@ uv_version:
 _message_after_copy: |
   Next steps:
   1. uv lock  (CI installs with `uv sync --locked`; it fails until uv.lock exists)
-  2. prek install --allow-missing-config
+  2. uv sync --only-group lint && uv run --no-sync prek install --allow-missing-config
   3. If pyproject.toml existed before this copy, copier left it alone. Add:
        [dependency-groups]
        lint = ["prek"]

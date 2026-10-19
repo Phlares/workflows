@@ -16,9 +16,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Runs the hooks in .pre-commit-config.yaml on every file.
   lint:
-    uses: Phlares/workflows/.github/workflows/check.yml@[[ _copier_conf.vcs_ref_hash ]] # [[ _copier_conf.vcs_ref ]]
+    uses: Phlares/workflows/.github/workflows/check.yml@[[ _copier_conf.vcs_ref_hash ]] # [[ _copier_answers._commit ]]
     with:
       name: lint
       python-version: "[[ python_version ]]"
@@ -29,7 +28,7 @@ jobs:
 [% if tier == 'product' and 'python' in languages %]
 
   test-py:
-    uses: Phlares/workflows/.github/workflows/check.yml@[[ _copier_conf.vcs_ref_hash ]] # [[ _copier_conf.vcs_ref ]]
+    uses: Phlares/workflows/.github/workflows/check.yml@[[ _copier_conf.vcs_ref_hash ]] # [[ _copier_answers._commit ]]
     with:
       name: pytest
       runs-on: [[ target_os ]]
@@ -40,7 +39,7 @@ jobs:
       run: uv run --no-sync pytest -q
 
   typecheck:
-    uses: Phlares/workflows/.github/workflows/check.yml@[[ _copier_conf.vcs_ref_hash ]] # [[ _copier_conf.vcs_ref ]]
+    uses: Phlares/workflows/.github/workflows/check.yml@[[ _copier_conf.vcs_ref_hash ]] # [[ _copier_answers._commit ]]
     with:
       name: typecheck
       python-version: "[[ python_version ]]"
@@ -52,7 +51,7 @@ jobs:
 [% if tier == 'product' and 'node' in languages %]
 
   test-js:
-    uses: Phlares/workflows/.github/workflows/check.yml@[[ _copier_conf.vcs_ref_hash ]] # [[ _copier_conf.vcs_ref ]]
+    uses: Phlares/workflows/.github/workflows/check.yml@[[ _copier_conf.vcs_ref_hash ]] # [[ _copier_answers._commit ]]
     with:
       name: test
       runs-on: [[ target_os ]]

@@ -32,6 +32,6 @@ repos:
 [% endif %]
   # Suppression comments stay at the .suppressions baseline (0 when absent).
   - repo: https://github.com/Phlares/workflows
-    rev: [[ _copier_conf.vcs_ref_hash ]]  # frozen: [[ _copier_conf.vcs_ref ]]
+    rev: [[ _copier_conf.vcs_ref_hash ]]  # frozen: [[ _copier_answers._commit ]]
     hooks:
       - id: suppressions

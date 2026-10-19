@@ -248,7 +248,9 @@ guard to the commit they were generated from. After the copy, Dependabot
 moves every package, action and hook pin. `copier update --vcs-ref <tag>`
 brings later template changes (a rule, a group, a hook) and merges them
 with those pin edits; a conflict shows as markers, which the
-`check-merge-conflict` hook fails on. `pyproject.toml` and `.gitignore` are
+`check-merge-conflict` hook fails on. The `check.yml` and guard pins
+conflict whenever Dependabot moved them since the last update: keep the
+newer one. `pyproject.toml` and `.gitignore` are
 written only on the first copy. Design:
 `docs/specs/2026-10-19-template-uv-design.md`.
 
