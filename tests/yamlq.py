@@ -11,7 +11,8 @@ import sys
 import yaml
 
 path, what, *args = sys.argv[1:]
-doc = yaml.safe_load(open(path, encoding="utf-8"))
+with open(path, encoding="utf-8") as f:
+    doc = yaml.safe_load(f)
 if what == "jobs":
     print(" ".join(sorted(doc["jobs"])))
 elif what == "job":

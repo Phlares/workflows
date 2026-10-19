@@ -18,14 +18,14 @@ gen() { # $1 dir name, $2 tier, $3 languages ("python", "node" or "python, node"
   local d="$tmp/$1" tier=$2 langs=$3; shift 3
   "${copier[@]}" copy --quiet --defaults --vcs-ref HEAD -d tier="$tier" -d "languages=[$langs]" "$@" "$tpl" "$d" 2> "$d.log"
 }
-files() { (cd "$tmp/$1" && find . -type f -not -path './.git/*' | sed 's#^\./##' | sort | tr '\n' ' ' | sed 's/ $//'); }
+sorted() { printf '%s\n' "$@" | sort | paste -sd ' '; }
+files() { (cd "$tmp/$1" && find . -type f -not -path './.git/*' | sed 's#^\./##' | sort | paste -sd ' '); }
 
-common=".copier-answers.yml .github/dependabot.yml .github/workflows/ci.yml .gitignore .pre-commit-config.yaml pyproject.toml"
 expect() { # $1 tier, $2 languages -> sorted file list
-  local f=$common
-  case $2 in *python*) f="$f ruff.toml" ;; esac
-  case "$1 $2" in product*python*) f="$f pyrightconfig.json" ;; esac
-  printf '%s\n' $f | sort | tr '\n' ' ' | sed 's/ $//'
+  local f=(.copier-answers.yml .github/dependabot.yml .github/workflows/ci.yml .gitignore .pre-commit-config.yaml pyproject.toml)
+  case $2 in *python*) f+=(ruff.toml) ;; esac
+  case "$1 $2" in product*python*) f+=(pyrightconfig.json) ;; esac
+  sorted "${f[@]}"
 }
 
 combos=("prototype:python" "prototype:node" "prototype:python, node" "product:python" "product:node" "product:python, node")
@@ -35,10 +35,10 @@ yq() { uv run -q --no-project --with pyyaml==6.0.3 python "$root/tests/yamlq.py"
 has() { grep -qF -- "$2" "$tmp/$1"; } # $1 path under $tmp, $2 fixed text
 # Expected jobs: lint always; product adds pytest + typecheck (python), test (node).
 expect_jobs() {
-  local j=lint
-  case "$1 $2" in product*python*) j="$j test-py typecheck" ;; esac
-  case "$1 $2" in product*node*) j="$j test-js" ;; esac
-  printf '%s\n' $j | sort | tr '\n' ' ' | sed 's/ $//'
+  local j=(lint)
+  case "$1 $2" in product*python*) j+=(test-py typecheck) ;; esac
+  case "$1 $2" in product*node*) j+=(test-js) ;; esac
+  sorted "${j[@]}"
 }
 groups3() { echo "$1:minor,patch $1-major:major $1-security:security-updates"; }
 
@@ -76,11 +76,11 @@ in_dir() { local d="$tmp/$1"; shift; (cd "$d" && "$@") > "$tmp/out.log" 2>&1; }
 lint() { in_dir "$1" sh -c 'uv sync -q --locked --only-group lint && git add -A && uv run --no-sync prek run --all-files'; }
 fails() { ! "$@"; }
 mutate() { # $1 dir, $2 file, $3 line to prepend; succeeds when lint then fails; restores the file
-  local d="$tmp/$1" f=$2 rc=0
-  cp "$d/$f" "$tmp/keep"
-  printf '%s\n' "$3" | cat - "$tmp/keep" > "$d/$f"
+  local d="$tmp/$1" file=$2 rc=0
+  cp "$d/$file" "$tmp/keep"
+  printf '%s\n' "$3" | cat - "$tmp/keep" > "$d/$file"
   lint "$1" || rc=1
-  cp "$tmp/keep" "$d/$f"
+  cp "$tmp/keep" "$d/$file"
   return $((1 - rc))
 }
 val() { grep -qxF -- "$2" "$tmp/$1"; } # exact line present

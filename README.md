@@ -228,6 +228,30 @@ Dependabot's `pre-commit` updates move `rev`.
   `--update` does the same and exits 0. Nothing raises a count; a new
   kept site is a hand edit with its reason.
 
+## Template
+
+A copier template writes a new repo's CI caller, `dependabot.yml`, hook
+config and rule configs for one tier:
+
+```sh
+uvx copier@9.19.1 copy --vcs-ref <tag> gh:Phlares/workflows <dir>
+cd <dir> && uv lock
+```
+
+| Tier | For | Writes |
+|---|---|---|
+| prototype | Work that starts to formalize | `lint` job: ruff defaults + RUF100, PGH004; oxlint defaults with unused directives as errors; the suppression guard; Dependabot minor/major/security groups |
+| product | Repos that face the public | prototype plus ruff E, F, W, I, B, UP; oxlint `--deny-warnings`; test jobs; pyright standard with type-ignore comments off |
+
+Greybox repos get nothing. The generated files pin `check.yml` and the
+guard to the commit they were generated from. After the copy, Dependabot
+moves every package, action and hook pin. `copier update --vcs-ref <tag>`
+brings later template changes (a rule, a group, a hook) and merges them
+with those pin edits; a conflict shows as markers, which the
+`check-merge-conflict` hook fails on. `pyproject.toml` and `.gitignore` are
+written only on the first copy. Design:
+`docs/specs/2026-10-19-template-uv-design.md`.
+
 ## Versioning
 
 Semver tags. A breaking input change bumps the major version. Each release

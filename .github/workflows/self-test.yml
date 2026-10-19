@@ -169,7 +169,24 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: for t in tests/*.test.sh; do bash "$t" || exit 1; done
+      # template.test.sh needs uv and the network; the template job runs it.
+      - run: for t in tests/*.test.sh; do [ "$t" = tests/template.test.sh ] || bash "$t" || exit 1; done
+
+  # Generates every tier and language set from the copier template and runs
+  # the generated hooks, tests, pyright and copier update.
+  template:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: 0.13.1
+      - run: |
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/914e7df21a07ef503a81201c76d2b11c789d3fca/scripts/download-actionlint.bash) 1.7.12
+          ACTIONLINT=$PWD/actionlint bash tests/template.test.sh
 
   fix-collect:
     if: always()
@@ -215,7 +232,7 @@ jobs:
   # It is the one required check on main.
   verify:
     if: always()
-    needs: [js, js-sub, setup-composite, py-zig, py-uv, fail-uv-drift, fail, fail-win, fail-install, fail-setup, fail-odd, timeout, fail-raw, fix-unit, fix-collect, lint]
+    needs: [js, js-sub, setup-composite, py-zig, py-uv, fail-uv-drift, fail, fail-win, fail-install, fail-setup, fail-odd, timeout, fail-raw, fix-unit, fix-collect, lint, template]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -232,7 +249,7 @@ jobs:
             .fail.result == "failure" and ."fail-win".result == "failure" and
             ."fail-install".result == "failure" and ."fail-setup".result == "failure" and
             ."fail-odd".result == "failure" and .timeout.result == "failure" and
-            ."fail-raw".result == "failure" and ."fix-unit".result == "success" and ."fix-collect".result == "success"' <<<"$NEEDS"
+            ."fail-raw".result == "failure" and ."fix-unit".result == "success" and .template.result == "success" and ."fix-collect".result == "success"' <<<"$NEEDS"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: ci-failure-*
