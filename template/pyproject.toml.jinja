@@ -1,0 +1,15 @@
+# No [build-system]: uv does not build or install this project, only the
+# dependency groups.
+[project]
+name = "[[ _folder_name|lower|replace('_', '-')|replace(' ', '-') ]]"
+version = "0.0.0"
+requires-python = ">=[[ python_version ]]"
+
+# One group per CI job (ci.yml). uv.lock pins them with hashes; run `uv lock`
+# after any change here.
+[dependency-groups]
+lint = ["prek"]
+[% if tier == 'product' and 'python' in languages %]
+test = ["pytest"]
+typecheck = ["pyright"]
+[% endif %]

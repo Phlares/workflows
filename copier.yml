@@ -55,3 +55,23 @@ uv_version:
   type: str
   default: "0.13.1"
   when: false
+
+_message_after_copy: |
+  Next steps:
+  1. uv lock  (CI installs with `uv sync --locked`; it fails until uv.lock exists)
+  2. prek install --allow-missing-config
+  3. If pyproject.toml existed before this copy, copier left it alone. Add:
+       [dependency-groups]
+       lint = ["prek"]
+  [%- if tier == 'product' and 'python' in languages %]
+
+       test = ["pytest"]
+       typecheck = ["pyright"]
+  [%- endif %]
+
+  4. Repo settings (copier writes files only): turn on Dependabot alerts and
+     security updates; make the CI checks required on [[ default_branch ]].
+_message_after_update: |
+  If the tier or languages changed, compare pyproject.toml [dependency-groups]
+  with the jobs in .github/workflows/ci.yml (copier does not edit
+  pyproject.toml after the first copy), then run `uv lock`.

@@ -62,6 +62,82 @@ for c in "${combos[@]}"; do
   case $langs in *node*) check "$d npm groups" test "$(yq "$dep" groups npm | head -1)" = "$(groups3 npm)" ;; esac
 done
 
+# Generated checks run on seed files. The guard hook's commit exists only in
+# the template clone, so the hook repo points there.
+tpl_url=$(cygpath -m "$tpl" 2>/dev/null || echo "$tpl")
+seed() { # $1 dir, $2 languages
+  local d="$tmp/$1"
+  case $2 in *python*) cp -r "$root/tests/template-seed/seed.py" "$root/tests/template-seed/tests" "$d/" ;; esac
+  case $2 in *node*) cp "$root/tests/template-seed/seed.js" "$d/" ;; esac
+  sed -i "s#https://github.com/Phlares/workflows#$tpl_url#" "$d/.pre-commit-config.yaml"
+  (cd "$d" && git init -q . && git config core.autocrlf false && uv lock -q && git add -A)
+}
+in_dir() { local d="$tmp/$1"; shift; (cd "$d" && "$@") > "$tmp/out.log" 2>&1; }
+lint() { in_dir "$1" sh -c 'uv sync -q --locked --only-group lint && git add -A && uv run --no-sync prek run --all-files'; }
+fails() { ! "$@"; }
+mutate() { # $1 dir, $2 file, $3 line to prepend; succeeds when lint then fails; restores the file
+  local d="$tmp/$1" f=$2 rc=0
+  cp "$d/$f" "$tmp/keep"
+  printf '%s\n' "$3" | cat - "$tmp/keep" > "$d/$f"
+  lint "$1" || rc=1
+  cp "$tmp/keep" "$d/$f"
+  return $((1 - rc))
+}
+val() { grep -qxF -- "$2" "$tmp/$1"; } # exact line present
+
+for c in "${combos[@]}"; do
+  tier=${c%%:*} langs=${c#*:} d=$(dir "$c")
+  seed "$d" "$langs"
+  check "$d lint passes on seeds" lint "$d"
+  check "$d hook order" test "$(grep -oE 'id: [a-z-]+' "$tmp/$d/.pre-commit-config.yaml" | tr '\n' ' ')" = \
+    "$(case $langs in
+        python) echo "id: check-merge-conflict id: ruff-check id: ruff-format id: suppressions " ;;
+        node) echo "id: check-merge-conflict id: oxlint id: suppressions " ;;
+        *) echo "id: check-merge-conflict id: ruff-check id: ruff-format id: oxlint id: suppressions " ;;
+      esac)"
+  check "$d pyproject lint group" val "$d/pyproject.toml" 'lint = ["prek"]'
+  check "$d pyproject python floor" val "$d/pyproject.toml" 'requires-python = ">=3.12"'
+  case $langs in *python*)
+    check "$d noqa fails lint" mutate "$d" seed.py "# noqa: E501"
+    if [ "$tier" = product ]; then
+      check "$d ruff product select" val "$d/ruff.toml" 'select = ["E", "F", "W", "I", "B", "UP", "RUF100", "PGH004"]'
+      check "$d ruff product ignore" val "$d/ruff.toml" 'ignore = ["E501"]'
+    else
+      check "$d ruff prototype extend-select" val "$d/ruff.toml" 'extend-select = ["RUF100", "PGH004"]'
+    fi ;;
+  esac
+  case $langs in *node*)
+    check "$d unused oxlint directive fails lint" mutate "$d" seed.js "// oxlint-disable-next-line no-debugger"
+    check "$d oxlint unused directives are errors" val "$d/.pre-commit-config.yaml" "          - --report-unused-disable-directives-severity=error"
+    if [ "$tier" = product ]; then
+      check "$d oxlint deny warnings" val "$d/.pre-commit-config.yaml" "          - --deny-warnings"
+    else
+      check "$d prototype allows warnings" fails has "$d/.pre-commit-config.yaml" "--deny-warnings"
+    fi ;;
+  esac
+  case "$tier $langs" in product*python*)
+    pc="$d/pyrightconfig.json"
+    check "$d pyright standard" val "$pc" '  "typeCheckingMode": "standard",'
+    check "$d pyright ignores off" val "$pc" '  "enableTypeIgnoreComments": false,'
+    check "$d pyright stale ignore is an error" val "$pc" '  "reportUnnecessaryTypeIgnoreComment": "error",'
+    check "$d pyright version" val "$pc" '  "pythonVersion": "3.12",'
+    check "$d pyright platform" val "$pc" '  "pythonPlatform": "Linux",'
+    check "$d pytest passes" in_dir "$d" sh -c 'uv sync -q --locked --group test && uv run --no-sync pytest -q'
+    check "$d pyright passes" in_dir "$d" sh -c 'uv sync -q --locked --group typecheck && uv run --no-sync pyright'
+    printf 'VALUE = 1  # pyright: ignore[reportGeneralTypeIssues]\n' > "$tmp/$d/stale.py"
+    check "$d stale pyright ignore fails" fails in_dir "$d" uv run --no-sync pyright
+    rm "$tmp/$d/stale.py" ;;
+  esac
+done
+
+# Review Focus 2: an existing pyproject.toml stays as it was, and the message
+# names the groups to add.
+mkdir -p "$tmp/has-pyproject" && printf '[project]\nname = "mine"\n' > "$tmp/has-pyproject/pyproject.toml"
+cp "$tmp/has-pyproject/pyproject.toml" "$tmp/mine.toml"
+"${copier[@]}" copy --defaults --vcs-ref HEAD -d tier=product -d "languages=[python]" "$tpl" "$tmp/has-pyproject" > "$tmp/msg.log" 2>&1
+check "existing pyproject kept" cmp -s "$tmp/mine.toml" "$tmp/has-pyproject/pyproject.toml"
+check "message names the groups" grep -qF '[dependency-groups]' "$tmp/msg.log"
+
 # Review Focus 3 and 5: both test jobs have distinct names; Windows target
 # moves the test jobs only.
 check "both langs: distinct check names" test "$(yq "$tmp/product-python-node/.github/workflows/ci.yml" job test-py name)" != \
@@ -72,5 +148,6 @@ check "windows: pytest on windows" test "$(yq "$wci" job test-py runs-on)" = win
 check "windows: node test on windows" test "$(yq "$wci" job test-js runs-on)" = windows-latest
 check "windows: typecheck on ubuntu" test "$(yq "$wci" job typecheck runs-on)" = ubuntu-latest
 check "windows: lint on ubuntu" test "$(yq "$wci" job lint runs-on)" = ubuntu-latest
+check "windows: pyright platform" val win/pyrightconfig.json '  "pythonPlatform": "Windows",'
 
 finish
