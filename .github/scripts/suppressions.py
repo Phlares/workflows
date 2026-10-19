@@ -138,8 +138,8 @@ def load(text):
     return baseline, errors
 
 
-def main(argv=None):
-    args = sys.argv[1:] if argv is None else argv
+def main():
+    args = sys.argv[1:]
     sys.stdout.reconfigure(newline="\n")  # LF on Windows too
     if "--markers" in args:
         print("\n".join(m[0] for m in MARKERS))
@@ -173,11 +173,7 @@ def main(argv=None):
     stale = lowered != baseline
     if stale and rewritable:
         write(lowered)
-        print(
-            f"{BASELINE} lowered; stage it"
-            if lowered
-            else f"{BASELINE} removed; stage it"
-        )
+        print(f"{BASELINE} {'lowered' if lowered else 'removed'}; stage it")
     if errors:
         print("\n".join(errors))
     return 1 if errors or (stale and "--update" not in args) else 0
