@@ -185,6 +185,10 @@ jobs:
           bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/914e7df21a07ef503a81201c76d2b11c789d3fca/scripts/download-actionlint.bash) 1.7.12
           ./actionlint -color
           shellcheck -x -P SCRIPTDIR .github/scripts/*.sh tests/*.sh tests/fake-gh
+          python3 .github/scripts/suppressions.py
+          # Dependabot does not read this pin; bump it by hand.
+          pipx run ruff==0.17.1 check .github/scripts
+          pipx run ruff==0.17.1 format --check .github/scripts
 
   # GitHub cannot mark a reusable-workflow job "expected to fail", so this job
   # checks that the fail cases failed and that their reports are well formed.

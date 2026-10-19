@@ -16,7 +16,18 @@ COUNT, FORBID = "count", "forbid"
 BASELINE = ".suppressions"
 
 PY = ("*.py", "*.pyi")
-JS = ("*.js", "*.mjs", "*.cjs", "*.jsx", "*.ts", "*.mts", "*.cts", "*.tsx", "*.vue", "*.svelte")
+JS = (
+    "*.js",
+    "*.mjs",
+    "*.cjs",
+    "*.jsx",
+    "*.ts",
+    "*.mts",
+    "*.cts",
+    "*.tsx",
+    "*.vue",
+    "*.svelte",
+)
 CSS = ("*.css", "*.scss", "*.less")
 SH = ("*.sh", "*.bash")
 ACTIONLINT = (".github/actionlint.yaml", ".github/actionlint.yml")
@@ -96,7 +107,9 @@ def scan(paths):
 
 
 def tracked():
-    out = subprocess.run(["git", "ls-files", "-z"], capture_output=True, check=True).stdout
+    out = subprocess.run(
+        ["git", "ls-files", "-z"], capture_output=True, check=True
+    ).stdout
     return [p for p in out.decode("utf-8").split("\0") if p]
 
 
@@ -131,7 +144,9 @@ def main(argv=None):
     if "--markers" in args:
         print("\n".join(m[0] for m in MARKERS))
         return 0
-    top = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, check=True)
+    top = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"], capture_output=True, check=True
+    )
     os.chdir(top.stdout.decode().strip())
     counts, forbidden = scan(tracked())
     try:
@@ -158,7 +173,11 @@ def main(argv=None):
     stale = lowered != baseline
     if stale and rewritable:
         write(lowered)
-        print(f"{BASELINE} lowered; stage it" if lowered else f"{BASELINE} removed; stage it")
+        print(
+            f"{BASELINE} lowered; stage it"
+            if lowered
+            else f"{BASELINE} removed; stage it"
+        )
     if errors:
         print("\n".join(errors))
     return 1 if errors or (stale and "--update" not in args) else 0
@@ -169,8 +188,10 @@ def write(baseline):
         os.remove(BASELINE)
         return
     with open(BASELINE, "w", encoding="utf-8", newline="\n") as f:
-        for (path, name), (count, reason) in baseline.items():
-            f.write(f"{path}\t{name}\t{count}\t{reason}\n")
+        f.writelines(
+            f"{path}\t{name}\t{count}\t{reason}\n"
+            for (path, name), (count, reason) in baseline.items()
+        )
 
 
 if __name__ == "__main__":
