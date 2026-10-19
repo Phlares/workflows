@@ -171,7 +171,8 @@ jobs:
           jq -e '.schema == 1 and .job == "fail"' ci-failure-fail-1/report.json
           raw=$(grep -lx '# fail-raw' log-*.txt)
           grep -q 'raw failure marker' "$raw"
-          test -z "$(grep -lx '# fail / fail (1)' log-*.txt || true)"
+          # set -e skips a command negated with !, so this must stay the last line.
+          ! grep -qx '# fail / fail (1)' log-*.txt
 
   lint:
     runs-on: ubuntu-latest
