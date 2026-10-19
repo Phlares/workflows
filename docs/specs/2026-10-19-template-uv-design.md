@@ -45,7 +45,7 @@ Prototype runs tests locally only. CI runs lint.
 | C7 | `target_os` sets both the test runner and pyright's `pythonPlatform` (Linux or Windows). `python_version` sets `requires-python`, pyright's `pythonVersion` and the CI Python. | T5 (typecheck spec): platform and version follow the product. A new repo has one of each. |
 | C8 | Secrets: gitleaks, as a pre-commit hook pinned by hash, at product tier. | GitHub secret scanning is free on public repos only. On a personal account, private repos cannot get it (it needs Secret Protection on an organization or Enterprise). gitleaks (MIT) runs the same locally and in CI on public and private repos. |
 | C9 | The guard's marker table gains `gitleaks:allow` (all files). | It is an inline suppression like `noqa`. It must sit in `.suppressions` with a reason. |
-| C10 | Every generated repo has `pyproject.toml` with `[dependency-groups]` and a `uv.lock`, including Node-only repos (`[tool.uv] package = false`). `lint = ["prek"]` in every repo. | One pin mechanism. prek is a Python package; Node-only repos install it the same way. |
+| C10 | Every generated repo has `pyproject.toml` with `[dependency-groups]` and a `uv.lock`, including Node-only repos. The generated file has no `[build-system]`, so uv does not build or install the project. `lint = ["prek"]` in every repo. | One pin mechanism. prek is a Python package; Node-only repos install it the same way. |
 | C11 | `pyproject.toml` and `.gitignore` are written only when absent (`_skip_if_exists`), so `copier update` never touches them. Rule values live in template-owned files that `copier update` does reach: `ruff.toml` and `pyrightconfig.json`. When `pyproject.toml` already exists, the post-copy message lists the groups to add. | A repo that already has a `pyproject.toml` keeps it. Pylance reads `pyrightconfig.json`, so T4's one-config rule holds; template repos use the file instead of `[tool.pyright]`. ruff reads `ruff.toml` before `[tool.ruff]`, so a repo must not keep both. |
 | C12 | The template does not create `uv.lock`. The post-copy message says to run `uv lock`. No `_tasks`. | Tasks make the template "unsafe" (copier needs `--trust`). Without a lock, `uv sync --locked` fails CI at once, which makes the missing step loud. |
 | C14 | Tool sources: ruff, oxlint and gitleaks run as hook repos (Dependabot `pre-commit`). pyright and pytest sit in uv groups (Dependabot `uv`). prek installs Node for the oxlint hook, so a lint job sets only `python-version` and `uv-version`. | As the callers run today; VoxGarbler's lint job lints `game/` with only Python set up. |
@@ -84,7 +84,7 @@ Example (VoxGarbler `lint`):
 | `.pre-commit-config.yaml` | yes | yes | `check-merge-conflict`, ruff (python), oxlint (node), suppression guard, gitleaks (product). Every `rev` is a hash with `# frozen:`. |
 | `ruff.toml` | python | python | Rule set by tier. |
 | `pyrightconfig.json` | no | python | Standard mode, the two flags, `pythonVersion`, `pythonPlatform` (C7). |
-| `pyproject.toml` | yes | yes | Only when absent. `[dependency-groups]`; `[tool.uv] package = false` when node only. |
+| `pyproject.toml` | yes | yes | Only when absent. `[dependency-groups]`; no `[build-system]`, so uv never builds the project. |
 | `.gitignore` | yes | yes | Only when absent. `.venv/`. |
 
 No `.suppressions` file: an absent file is a baseline of 0.
