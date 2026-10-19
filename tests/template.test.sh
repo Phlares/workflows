@@ -150,4 +150,43 @@ check "windows: typecheck on ubuntu" test "$(yq "$wci" job typecheck runs-on)" =
 check "windows: lint on ubuntu" test "$(yq "$wci" job lint runs-on)" = ubuntu-latest
 check "windows: pyright platform" val win/pyrightconfig.json '  "pythonPlatform": "Windows",'
 
+# Update flow (C3): two tagged template versions in their own clone.
+tpl2="$tmp/tpl2"
+git clone -q --no-local "$tpl" "$tpl2"
+gitc() { git -C "$1" -c user.name=t -c user.email=t@t "${@:2}"; }
+gitc "$tpl2" tag v0.0.1
+printf '%s\n' "# probe: template v2" | cat - "$tpl2/template/.pre-commit-config.yaml.jinja" > "$tmp/v2" &&
+  mv "$tmp/v2" "$tpl2/template/.pre-commit-config.yaml.jinja"
+gitc "$tpl2" commit -qam v2 && gitc "$tpl2" tag v0.0.2
+genv1() { # $1 dir, $2 tier: generate at v0.0.1 and commit
+  "${copier[@]}" copy --quiet --defaults --vcs-ref v0.0.1 -d tier="$2" -d "languages=[python]" "$tpl2" "$tmp/$1" &&
+    gitc "$tmp/$1" init -q && gitc "$tmp/$1" add -A && gitc "$tmp/$1" commit -qm v1
+}
+update() { local d=$1; shift; (cd "$tmp/$d" && "${copier[@]}" update --defaults --vcs-ref v0.0.2 "$@") > "$tmp/$d.update.log" 2>&1; }
+
+old_rev="38bfb07c0c64c304f47eb52090f8288150c77730  # frozen: v0.17.1"
+new_rev="1111111111111111111111111111111111111111  # frozen: v0.99.0"
+genv1 upd prototype
+sed -i "s/$old_rev/$new_rev/" "$tmp/upd/.pre-commit-config.yaml"
+gitc "$tmp/upd" commit -qam "bump ruff (as Dependabot)"
+check "update runs" update upd
+cfg="$tmp/upd/.pre-commit-config.yaml"
+check "update brings the template change" grep -qxF "# probe: template v2" "$cfg"
+kept_or_conflict() { # the pin edit survives, or the conflict is loud
+  if grep -q '^<<<<<<<' "$cfg"; then
+    fails sh -c "cd '$tmp/upd' && uv run -q --no-project --with pre-commit-hooks==6.0.0 check-merge-conflict --assume-in-merge .pre-commit-config.yaml"
+  else
+    grep -qF "$new_rev" "$cfg" && fails grep -qF "$old_rev" "$cfg"
+  fi
+}
+check "update keeps the Dependabot pin or marks a conflict" kept_or_conflict
+
+# Review Focus 1: prototype -> product on update adds the product files and values.
+genv1 tier prototype
+check "tier change runs" update tier -d tier=product
+check "tier change: pyrightconfig.json" test -f "$tmp/tier/pyrightconfig.json"
+check "tier change: product ruff rules" val tier/ruff.toml 'select = ["E", "F", "W", "I", "B", "UP", "RUF100", "PGH004"]'
+check "tier change: typecheck job" test "$(yq "$tmp/tier/.github/workflows/ci.yml" jobs)" = "lint test-py typecheck"
+check "tier change: message names the groups" grep -qF "[dependency-groups]" "$tmp/tier.update.log"
+
 finish
