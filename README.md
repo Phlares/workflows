@@ -32,6 +32,7 @@ The check is named `<caller job> / <name> (<shard>)`, for example
 | `python-version` | empty | Empty = not installed. pip cache needs `pyproject.toml` or `requirements*.txt` in `<working-directory>`; without them the job fails in step `setup` |
 | `zig-version` | empty | Empty = not installed |
 | `uv-version` | empty | Empty = not installed. The uv cache is keyed on `<working-directory>/uv.lock` |
+| `prek-cache` | `false` | Cache the prek store (hook envs, such as the gitleaks build) for jobs that run prek. Sets `PREK_HOME` to `$RUNNER_TEMP/prek`. Keyed on OS, arch, `python-version` and `<working-directory>/.pre-commit-config.yaml` + `uv.lock`; a hook bump costs one cold build |
 | `working-directory` | `.` | Where `install` and `run` execute |
 | `install` | empty | Commands run before `run` |
 | `run` | required | Commands; stops at the first failure |
@@ -212,12 +213,17 @@ Dependabot's `pre-commit` updates move `rev`.
   comment opener before the marker, so text in a string with no opener
   does not count. Test skips (`.skip`, `.skipIf`, `pytest.mark.skip`,
   `pytest.importorskip`, …) count.
-- Not scanned: files no row's globs select, such as `*.md` and files with
-  no extension.
+- `gitleaks:allow` counts in every tracked file, `*.md` included, with no
+  comment opener: gitleaks honours it anywhere on a line.
+- Not scanned: files no row's globs select. Only the `gitleaks allow` row
+  reads `*.md` and files with no extension.
 - Always fail, whatever the baseline: forms with no rule list (bare
   `type: ignore`, `pyright: ignore` without `[rule]`, blanket `noqa`,
   `ruff: noqa` without codes, `eslint-disable`, `oxlint-disable` or
-  `stylelint-disable` with no rule) and `.only`.
+  `stylelint-disable` with no rule), `.only`, and any line in
+  `.gitleaksignore` or `.gitleaks.toml` that is not blank or a `#` comment.
+  Their entries skip findings with no reason; `gitleaks:allow` plus a
+  `.suppressions` reason is the one way to suppress.
 - `.suppressions`: one `path<TAB>marker<TAB>count<TAB>reason` line per
   kept site, with no header. `marker` is a name from `--markers`. A line
   with no reason fails. No file means a baseline of 0.
@@ -253,6 +259,14 @@ conflict whenever Dependabot moved them since the last update: keep the
 newer one. `pyproject.toml` and `.gitignore` are
 written only on the first copy. Design:
 `docs/specs/2026-10-19-template-uv-design.md`.
+
+Every tier gets the gitleaks hook (pinned by hash, built by prek). On
+commit it scans staged changes. The `lint` job runs
+`prek run --all-files --hook-stage manual`, which adds a `gitleaks git`
+entry that scans the checkout's commits: the HEAD tree in CI (depth 1),
+the full history when run locally. The job sets `prek-cache: true`, so a
+warm run skips the Go build. Design:
+`docs/specs/2026-10-19-secrets-check-design.md`.
 
 ## Versioning
 

@@ -3,7 +3,8 @@
 Each MARKERS row is (name, file globs, regex, kind). A row matches only in
 files its globs select, and its regex runs on each line. A regex requires
 the comment opener before the marker, as the tools themselves do, so a
-marker inside a string with no opener does not count.
+marker inside a string with no opener does not count. The exception is
+gitleaks allow, which gitleaks honours anywhere on a line.
 """
 
 import fnmatch
@@ -31,6 +32,7 @@ JS = (
 CSS = ("*.css", "*.scss", "*.less")
 SH = ("*.sh", "*.bash")
 ACTIONLINT = (".github/actionlint.yaml", ".github/actionlint.yml")
+ALL = ("*",)
 
 H = r"#\s*"
 C = r"(?://+|/\*+)\s*"
@@ -40,6 +42,8 @@ TEST = r"\b(?:it|test|describe|suite)\."
 RULE = r"(?:-next-line|-line)?[ \t]+[\w@]"
 NO_RULE = r"(?:-next-line|-line)?(?![-\w])(?![ \t]+[\w@])"
 PYTEST = "pytest"  # joined at use: the plain dotted names would count here
+GITLEAKS = "gitleaks"  # joined at use: the plain marker would count here
+ENTRY = r"^[ \t]*[^\s#]"
 
 
 def _disable(tool, globs):
@@ -83,6 +87,10 @@ MARKERS = [
         *_disable("stylelint", CSS),
         ("shellcheck disable", SH, H + r"shellcheck\s+disable=", COUNT),
         ("actionlint ignore", ACTIONLINT, r"^\s*ignore:", COUNT),
+        # gitleaks honours the marker anywhere on a line, so no opener.
+        ("gitleaks allow", ALL, GITLEAKS + ":allow", COUNT),
+        (".gitleaksignore entry", (".gitleaksignore",), ENTRY, FORBID),
+        (".gitleaks.toml entry", (".gitleaks.toml",), ENTRY, FORBID),
     ]
 ]
 
@@ -95,7 +103,12 @@ def scan(paths):
         if not rows or not os.path.isfile(path):
             continue
         with open(path, "rb") as f:
-            text = f.read().decode("utf-8", "replace")
+            data = f.read()
+        # git's binary test: a NUL in the first 8000 bytes. Only the all-files
+        # row skips binaries; a NUL must not hide a file from its own rows.
+        if b"\0" in data[:8000]:
+            rows = [m for m in rows if m[1] != ALL]
+        text = data.decode("utf-8", "replace")
         for n, line in enumerate(text.split("\n"), 1):
             for name, _, rx, kind in rows:
                 for _ in rx.finditer(line):

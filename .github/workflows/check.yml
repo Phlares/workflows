@@ -13,6 +13,7 @@ on:
       python-version: { type: string, default: "" }
       zig-version: { type: string, default: "" }
       uv-version: { type: string, default: "" }
+      prek-cache: { type: boolean, default: false }
       working-directory: { type: string, default: "." }
       install: { type: string, default: "" }
       run: { type: string, required: true }
@@ -63,6 +64,7 @@ jobs:
           python-version: ${{ inputs.python-version }}
           zig-version: ${{ inputs.zig-version }}
           uv-version: ${{ inputs.uv-version }}
+          prek-cache: ${{ inputs.prek-cache }}
           working-directory: ${{ inputs.working-directory }}
           env: ${{ inputs.env }}
       # Step-level limits: a job-level timeout cancels the job, and a

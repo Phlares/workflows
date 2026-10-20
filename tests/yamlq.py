@@ -1,7 +1,8 @@
 """Print one fact about a YAML file for tests/template.test.sh.
 
 yamlq.py FILE jobs                 sorted job ids
-yamlq.py FILE job ID KEY           a job's uses, or with.KEY (runs-on defaults as check.yml)
+yamlq.py FILE job ID KEY           a job's uses, or with.KEY (runs-on defaults as check.yml;
+                                   booleans print as YAML writes them)
 yamlq.py FILE ecosystems           sorted package-ecosystem values
 yamlq.py FILE groups ECOSYSTEM     "name:update-types|applies-to" per group
 """
@@ -19,7 +20,8 @@ elif what == "job":
     job, key = args
     j = doc["jobs"][job]
     default = "ubuntu-latest" if key == "runs-on" else ""
-    print(j[key] if key == "uses" else j.get("with", {}).get(key, default))
+    v = j[key] if key == "uses" else j.get("with", {}).get(key, default)
+    print(str(v).lower() if isinstance(v, bool) else v)
 elif what == "ecosystems":
     print(" ".join(sorted(u["package-ecosystem"] for u in doc["updates"])))
 elif what == "groups":
