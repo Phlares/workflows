@@ -1,4 +1,5 @@
 .github/actionlint.yaml	actionlint ignore	1	actionlint does not know job.workflow_sha; last checked against actionlint 1.7.12, retest on each bump
 .github/scripts/fix-paths.sh	shellcheck disable	1	SC2034: shellcheck checks the sourced file alone and cannot see the scripts that use CONFIG_PATHS; bash arrays cannot be exported
+README.md	gitleaks allow	2	names the marker in docs
 docs/specs/2026-10-19-secrets-check-design.md	gitleaks allow	7	names the marker in docs
 tests/fix-args.test.sh	shellcheck disable	1	SC2053: the rule is a glob on purpose; case trips SC2254 instead, and shellcheck has no glob-match form without a directive
