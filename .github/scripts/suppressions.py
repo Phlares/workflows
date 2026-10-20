@@ -104,9 +104,10 @@ def scan(paths):
             continue
         with open(path, "rb") as f:
             data = f.read()
-        # git's binary test: a NUL in the first 8000 bytes. gitleaks skips them too.
+        # git's binary test: a NUL in the first 8000 bytes. Only the all-files
+        # row skips binaries; a NUL must not hide a file from its own rows.
         if b"\0" in data[:8000]:
-            continue
+            rows = [m for m in rows if m[1] != ALL]
         text = data.decode("utf-8", "replace")
         for n, line in enumerate(text.split("\n"), 1):
             for name, _, rx, kind in rows:

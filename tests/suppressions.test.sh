@@ -90,7 +90,9 @@ repo; printf '%s
 check "comment and blank lines in gitleaks files pass" test "$rc" -eq 0 -a "$(nhits)" -eq 0
 
 repo; printf '\0%s\n' "$ga" > a.bin; git add a.bin; hook
-check "binary files are not scanned" test "$rc" -eq 0 -a "$(nhits)" -eq 0
+check "binary files skip the all-files row" test "$rc" -eq 0 -a "$(nhits)" -eq 0
+repo; printf '\0\nabc:a.py:generic-api-key:1\n' > .gitleaksignore; printf '\0\nx = 1  # NOQA\n' > a.py; git add -A; hook
+check "a NUL does not hide language or gitleaks rows" test "$(nhits)" -eq 3 || echo "     $out"
 
 repo; put notes.md "see $ga here"; hook
 check "gitleaks allow counts in markdown" test "$(hits)" = "notes.md:1: gitleaks allow"
