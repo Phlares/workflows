@@ -5,6 +5,7 @@ inputs:
   python-version: { description: Python version; empty skips Python, default: "" }
   zig-version: { description: Zig version; empty skips Zig, default: "" }
   uv-version: { description: uv version; empty skips uv, default: "" }
+  prek-cache: { description: Cache the prek store; for jobs that run prek, default: "false" }
   working-directory: { description: Folder holding the lock files, default: "." }
   env: { description: KEY=VALUE lines, default: "" }
 runs:
@@ -35,6 +36,16 @@ runs:
         version: ${{ inputs.uv-version }}
         enable-cache: true
         cache-dependency-glob: ${{ inputs.working-directory }}/uv.lock
+    - if: inputs.prek-cache == 'true'
+      shell: bash
+      run: echo "PREK_HOME=$RUNNER_TEMP/prek" >> "$GITHUB_ENV"
+    # No restore-keys: a near match would be saved again under the new key
+    # with stale hook envs.
+    - if: inputs.prek-cache == 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/prek
+        key: prek-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.python-version }}-${{ hashFiles(format('{0}/.pre-commit-config.yaml', inputs.working-directory), format('{0}/uv.lock', inputs.working-directory)) }}
     # Not $GITHUB_ENV: the runner refuses NODE_OPTIONS there. env.sh is for
     # shell steps; env.json is for Claude Code settings in claude-fix.yml.
     - name: env

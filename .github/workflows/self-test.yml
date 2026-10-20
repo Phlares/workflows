@@ -82,7 +82,23 @@ jobs:
       uv-version: 0.13.1
       working-directory: fixtures/py-uv
       install: uv sync --locked --only-group test
-      run: uv run --no-sync pytest -q
+      run: |
+        test -z "${PREK_HOME:-}"
+        uv run --no-sync pytest -q
+
+  prek-cache:
+    uses: ./.github/workflows/check.yml
+    with:
+      name: prek-cache
+      python-version: "3.12"
+      uv-version: 0.13.1
+      prek-cache: true
+      working-directory: fixtures/prek
+      install: uv sync --locked --only-group lint
+      run: |
+        test "$PREK_HOME" = "$RUNNER_TEMP/prek"
+        uv run --no-sync prek run --all-files --hook-stage manual
+        test -n "$(find "$PREK_HOME" -path '*/bin/gitleaks' -type f)"
 
   fail-uv-drift:
     uses: ./.github/workflows/check.yml
@@ -232,7 +248,7 @@ jobs:
   # It is the one required check on main.
   verify:
     if: always()
-    needs: [js, js-sub, setup-composite, py-zig, py-uv, fail-uv-drift, fail, fail-win, fail-install, fail-setup, fail-odd, timeout, fail-raw, fix-unit, fix-collect, lint, template]
+    needs: [js, js-sub, setup-composite, py-zig, py-uv, prek-cache, fail-uv-drift, fail, fail-win, fail-install, fail-setup, fail-odd, timeout, fail-raw, fix-unit, fix-collect, lint, template]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -244,7 +260,7 @@ jobs:
         run: |
           jq -e '
             .js.result == "success" and ."js-sub".result == "success" and ."setup-composite".result == "success" and
-            ."py-zig".result == "success" and ."py-uv".result == "success" and .lint.result == "success" and
+            ."py-zig".result == "success" and ."py-uv".result == "success" and ."prek-cache".result == "success" and .lint.result == "success" and
             ."fail-uv-drift".result == "failure" and
             .fail.result == "failure" and ."fail-win".result == "failure" and
             ."fail-install".result == "failure" and ."fail-setup".result == "failure" and
