@@ -103,7 +103,11 @@ def scan(paths):
         if not rows or not os.path.isfile(path):
             continue
         with open(path, "rb") as f:
-            text = f.read().decode("utf-8", "replace")
+            data = f.read()
+        # git's binary test: a NUL in the first 8000 bytes. gitleaks skips them too.
+        if b"\0" in data[:8000]:
+            continue
+        text = data.decode("utf-8", "replace")
         for n, line in enumerate(text.split("\n"), 1):
             for name, _, rx, kind in rows:
                 for _ in rx.finditer(line):

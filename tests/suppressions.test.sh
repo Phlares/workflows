@@ -89,6 +89,9 @@ repo; printf '%s
 ' '# note' > .gitleaks.toml; git add -A; hook
 check "comment and blank lines in gitleaks files pass" test "$rc" -eq 0 -a "$(nhits)" -eq 0
 
+repo; printf '\0%s\n' "$ga" > a.bin; git add a.bin; hook
+check "binary files are not scanned" test "$rc" -eq 0 -a "$(nhits)" -eq 0
+
 repo; put notes.md "see $ga here"; hook
 check "gitleaks allow counts in markdown" test "$(hits)" = "notes.md:1: gitleaks allow"
 

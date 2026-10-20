@@ -93,6 +93,7 @@ key() { # a GitHub token shape built here, so no literal key sits in this repo
 ' "$p" "$p"
 }
 fails() { ! "$@"; }
+flags() { fails lint "$1" && grep -qF "$2" "$tmp/out.log"; } # $1 dir, $2 text: the lint job fails and names it
 mutate() { # $1 dir, $2 hook id, $3 file, $4 line to prepend; succeeds when that hook then fails; restores the file
   local d="$tmp/$1" hook=$2 file=$3 rc=0
   cp "$d/$file" "$tmp/keep"
@@ -108,6 +109,9 @@ for c in "${combos[@]}"; do
   tier=${c%%:*} langs=${c#*:} d=$(dir "$c")
   seed "$d" "$langs"
   check "$d lint passes on seeds" lint "$d"
+  # The manual stage still runs hooks with no stages: one status line per id.
+  check "$d lint job runs every hook" test "$(tr -d '\r' < "$tmp/out.log" | grep -cE '(Passed|Skipped)$')" = \
+    "$(grep -c -- '- id:' "$tmp/$d/.pre-commit-config.yaml")"
   check "$d hook order" test "$(grep -oE 'id: [a-z-]+' "$tmp/$d/.pre-commit-config.yaml" | tr '\n' ' ')" = \
     "$(case $langs in
         python) echo "id: check-merge-conflict id: gitleaks id: gitleaks id: ruff-check id: ruff-format id: suppressions " ;;
@@ -120,7 +124,7 @@ for c in "${combos[@]}"; do
   check "$d staged key fails gitleaks" mutate "$d" gitleaks .gitignore "$(key)"
   key > "$tmp/$d/leak.txt"
   git -C "$tmp/$d" add leak.txt && git -C "$tmp/$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm leak
-  check "$d committed key fails the lint job" fails lint "$d"
+  check "$d committed key fails the lint job" flags "$d" leak.txt
   git -C "$tmp/$d" reset -q --hard HEAD~1
   check "$d pyproject lint group" val "$d/pyproject.toml" 'lint = ["prek"]'
   check "$d pyproject python floor" val "$d/pyproject.toml" 'requires-python = ">=3.12"'
