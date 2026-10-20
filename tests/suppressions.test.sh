@@ -4,6 +4,7 @@
 script="$root/.github/scripts/suppressions.py"
 # This file is scanned by its own hook (shell row), so that marker is built.
 sc="shell""check"
+ga="gitleaks"":allow"
 nrepo=0
 repo() { # fresh git repo; cd into it
   nrepo=$((nrepo + 1)); mkdir -p "$tmp/r$nrepo"; cd "$tmp/r$nrepo" || exit 1
@@ -52,6 +53,9 @@ a.css	c	stylelint-disable	/* stylelint-disable-next-line color-no-hex */
 a.css	f	bare stylelint-disable	/* stylelint-disable */
 a.sh	c	shellcheck disable	# $sc disable=SC2034
 .github/actionlint.yaml	c	actionlint ignore	    ignore:
+.env.example	c	gitleaks allow	TOKEN=abc  # $ga
+.gitleaksignore	f	.gitleaksignore entry	abc123:a.py:generic-api-key:1
+.gitleaks.toml	f	.gitleaks.toml entry	[extend]
 EOF
 )
 
@@ -78,7 +82,15 @@ repo; put a.py 'x = "type: ignore[x]"'; hook
 check "a marker with no comment opener is not counted" test "$rc" -eq 0
 
 repo; put notes.md '# noqa: E1'; printf '%s\n' '# noqa: E1' > b.py; hook
-check "markdown and untracked files are not scanned" test "$rc" -eq 0 -a "$(nhits)" -eq 0
+check "markdown has no noqa row; untracked files are not scanned" test "$rc" -eq 0 -a "$(nhits)" -eq 0
+
+repo; printf '%s
+' '# why' '' > .gitleaksignore; printf '%s
+' '# note' > .gitleaks.toml; git add -A; hook
+check "comment and blank lines in gitleaks files pass" test "$rc" -eq 0 -a "$(nhits)" -eq 0
+
+repo; put notes.md "see $ga here"; hook
+check "gitleaks allow counts in markdown" test "$(hits)" = "notes.md:1: gitleaks allow"
 
 repo; put a.py 'x = 1  # noqa: E1  # type: ignore[y]'; hook
 check "two markers on one line count twice" test "$(nhits)" -eq 2
@@ -97,6 +109,9 @@ check "bad bytes, symlinks and submodules do not crash the scan" test "$(hits)" 
 T=$'\t'
 base() { printf '%s\n' "$@" > .suppressions; }
 has_out() { [[ $out == *"$1"* ]]; }
+
+repo; put a.env "K=v  # $ga"; base "a.env${T}gitleaks allow${T}1${T}why"; git add .suppressions; hook
+check "baseline lines do not count as gitleaks allow" test "$rc" -eq 0 || echo "     $out"
 
 repo; hook
 check "no file and no markers passes" test "$rc" -eq 0
