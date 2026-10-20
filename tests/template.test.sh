@@ -75,18 +75,30 @@ seed() { # $1 dir, $2 languages
   case $2 in *python*) cp -r "$root/tests/template-seed/seed.py" "$root/tests/template-seed/tests" "$d/" ;; esac
   case $2 in *node*) cp "$root/tests/template-seed/seed.js" "$d/" ;; esac
   sed -i "s#https://github.com/Phlares/workflows#$tpl_url#" "$d/.pre-commit-config.yaml"
-  (cd "$d" && git init -q . && git config core.autocrlf false && uv lock -q && git add -A)
+  (cd "$d" && git init -q . && git config core.autocrlf false && uv lock -q && git add -A &&
+    git -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm seed)
 }
 in_dir() { local d="$tmp/$1"; shift; (cd "$d" && "$@") > "$tmp/out.log" 2>&1; }
-lint() { # $1 dir, $2 hook id (empty = all hooks)
-  in_dir "$1" sh -c "uv sync -q --locked --only-group lint && git add -A && uv run --no-sync prek run ${2:-} --all-files"
+lint() { # $1 dir, $2 hook id (empty = the generated lint job's commands)
+  local ci="$tmp/$1/.github/workflows/ci.yml"
+  if [ -n "${2:-}" ]; then
+    in_dir "$1" sh -c "uv sync -q --locked --only-group lint && git add -A && uv run --no-sync prek run $2 --all-files"
+  else
+    in_dir "$1" sh -c "$(yq "$ci" job lint install) && git add -A && $(yq "$ci" job lint run)"
+  fi
+}
+key() { # a GitHub token shape built here, so no literal key sits in this repo
+  local p=aB3dE5gH7jK9mN1pQ2
+  printf 'token = "ghp_%s%s"
+' "$p" "$p"
 }
 fails() { ! "$@"; }
 mutate() { # $1 dir, $2 hook id, $3 file, $4 line to prepend; succeeds when that hook then fails; restores the file
   local d="$tmp/$1" hook=$2 file=$3 rc=0
   cp "$d/$file" "$tmp/keep"
   printf '%s\n' "$4" | cat - "$tmp/keep" > "$d/$file"
-  lint "$1" "$hook" || rc=1
+  # A hook that failed, not prek refusing an unknown hook id.
+  lint "$1" "$hook" || { grep -q "Failed" "$tmp/out.log" && rc=1; }
   cp "$tmp/keep" "$d/$file"
   return $((1 - rc))
 }
@@ -98,10 +110,18 @@ for c in "${combos[@]}"; do
   check "$d lint passes on seeds" lint "$d"
   check "$d hook order" test "$(grep -oE 'id: [a-z-]+' "$tmp/$d/.pre-commit-config.yaml" | tr '\n' ' ')" = \
     "$(case $langs in
-        python) echo "id: check-merge-conflict id: ruff-check id: ruff-format id: suppressions " ;;
-        node) echo "id: check-merge-conflict id: oxlint id: suppressions " ;;
-        *) echo "id: check-merge-conflict id: ruff-check id: ruff-format id: oxlint id: suppressions " ;;
+        python) echo "id: check-merge-conflict id: gitleaks id: gitleaks id: ruff-check id: ruff-format id: suppressions " ;;
+        node) echo "id: check-merge-conflict id: gitleaks id: gitleaks id: oxlint id: suppressions " ;;
+        *) echo "id: check-merge-conflict id: gitleaks id: gitleaks id: ruff-check id: ruff-format id: oxlint id: suppressions " ;;
       esac)"
+  ci="$tmp/$d/.github/workflows/ci.yml"
+  check "$d ci lint run" test "$(yq "$ci" job lint run)" = "uv run --no-sync prek run --all-files --hook-stage manual --show-diff-on-failure"
+  check "$d ci lint prek-cache" test "$(yq "$ci" job lint prek-cache)" = true
+  check "$d staged key fails gitleaks" mutate "$d" gitleaks .gitignore "$(key)"
+  key > "$tmp/$d/leak.txt"
+  git -C "$tmp/$d" add leak.txt && git -C "$tmp/$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm leak
+  check "$d committed key fails the lint job" fails lint "$d"
+  git -C "$tmp/$d" reset -q --hard HEAD~1
   check "$d pyproject lint group" val "$d/pyproject.toml" 'lint = ["prek"]'
   check "$d pyproject python floor" val "$d/pyproject.toml" 'requires-python = ">=3.12"'
   case $langs in *python*)
@@ -129,7 +149,6 @@ for c in "${combos[@]}"; do
     check "$d pyright stale ignore is an error" val "$pc" '  "reportUnnecessaryTypeIgnoreComment": "error",'
     check "$d pyright version" val "$pc" '  "pythonVersion": "3.12",'
     check "$d pyright platform" val "$pc" '  "pythonPlatform": "Linux",'
-    ci="$tmp/$d/.github/workflows/ci.yml"
     for j in test-py typecheck; do
       check "$d $j job passes" in_dir "$d" sh -c "$(yq "$ci" job $j install) && $(yq "$ci" job $j run)"
     done

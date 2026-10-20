@@ -22,9 +22,10 @@ jobs:
       name: lint
       python-version: "[[ python_version ]]"
       uv-version: [[ uv_version ]]
+      prek-cache: true
       timeout-minutes: 5
       install: uv sync --locked --only-group lint
-      run: uv run --no-sync prek run --all-files --show-diff-on-failure
+      run: uv run --no-sync prek run --all-files --hook-stage manual --show-diff-on-failure
 [% if tier == 'product' and 'python' in languages %]
 
   test-py:
