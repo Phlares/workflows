@@ -34,10 +34,10 @@ combos=("prototype:python" "prototype:node" "prototype:python, node" "product:py
 dir() { local s=${1//, /-}; echo "${s/:/-}"; }
 
 yq() { uv run -q --no-project --with pyyaml==6.0.3 python "$root/tests/yamlq.py" "$@" | tr -d '\r'; }
-# Expected jobs: lint always; product adds pytest + typecheck (python), test (node).
+# Expected jobs: lint always; product adds pytest, typecheck, licenses (python), test (node).
 expect_jobs() {
   local j=(lint)
-  case "$1 $2" in product*python*) j+=(test-py typecheck) ;; esac
+  case "$1 $2" in product*python*) j+=(test-py typecheck licenses) ;; esac
   case "$1 $2" in product*node*) j+=(test-js) ;; esac
   sorted "${j[@]}"
 }
@@ -156,6 +156,9 @@ for c in "${combos[@]}"; do
     for j in test-py typecheck; do
       check "$d $j job passes" in_dir "$d" sh -c "$(yq "$ci" job $j install) && $(yq "$ci" job $j run)"
     done
+    # check.yml checks this repo out at .wf/; here it is $root.
+    check "$d licenses installs runtime deps only" test "$(yq "$ci" job licenses install)" = "uv sync --locked --no-dev"
+    check "$d licenses job passes" in_dir "$d" sh -c "$(yq "$ci" job licenses install) && $(yq "$ci" job licenses run | sed "s#\.wf/#$root/#")"
     printf 'VALUE = 1  # pyright: ignore[reportGeneralTypeIssues]\n' > "$tmp/$d/stale.py"
     check "$d stale pyright ignore fails" fails in_dir "$d" uv run --no-sync pyright
     rm "$tmp/$d/stale.py" ;;
@@ -222,7 +225,7 @@ genv1 tier prototype
 check "tier change runs" update tier -d tier=product
 check "tier change: pyrightconfig.json" test -f "$tmp/tier/pyrightconfig.json"
 check "tier change: product ruff rules" val tier/ruff.toml 'select = ["E", "F", "W", "I", "B", "UP", "RUF100", "PGH004"]'
-check "tier change: typecheck job" test "$(yq "$tmp/tier/.github/workflows/ci.yml" jobs)" = "lint test-py typecheck"
+check "tier change: typecheck job" test "$(yq "$tmp/tier/.github/workflows/ci.yml" jobs)" = "licenses lint test-py typecheck"
 check "tier change: message points at the groups" grep -qF "[dependency-groups]" "$tmp/tier.update.log"
 
 # A copy with no --vcs-ref takes the newest tag; the pin comments name it.

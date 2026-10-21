@@ -48,6 +48,17 @@ jobs:
       timeout-minutes: 5
       install: uv sync --locked --group typecheck
       run: uv run --no-sync pyright
+
+  # Runtime dependencies only: what the project ships.
+  licenses:
+    uses: Phlares/workflows/.github/workflows/check.yml@[[ _copier_conf.vcs_ref_hash ]] # [[ _copier_answers._commit ]]
+    with:
+      name: licenses
+      python-version: "[[ python_version ]]"
+      uv-version: [[ uv_version ]]
+      timeout-minutes: 5
+      install: uv sync --locked --no-dev
+      run: uv run --no-sync python .wf/.github/scripts/licenses.py
 [% endif %]
 [% if tier == 'product' and 'node' in languages %]
 
