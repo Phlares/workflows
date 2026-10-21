@@ -22,6 +22,8 @@ fails_on() {
 
 proj; dist a 1 'License-Expression: MIT'
 check "plain allowed id" passes
+proj; dist a 1 'License-Expression: MIT-CMU AND CNRI-Python'
+check "notice-only MIT-CMU and CNRI-Python" passes
 proj; dist a 1 'License-Expression: BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0'
 check "AND of allowed ids" passes
 proj; dist a 1 'License-Expression: MIT AND GPL-3.0-only'

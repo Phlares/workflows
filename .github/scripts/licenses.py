@@ -14,10 +14,11 @@ import re
 import sys
 from importlib import metadata
 
-import tomllib  # 3.11+, the template's python_version floor
+import tomllib  # Python 3.11+
 
 ALLOW = {"mit", "mit-0", "bsd-2-clause", "bsd-3-clause", "0bsd", "isc"}
 ALLOW |= {"apache-2.0", "psf-2.0", "zlib", "cc0-1.0", "unlicense"}
+ALLOW |= {"mit-cmu", "cnri-python"}  # notice-only: pillow, regex
 # Allowed classifiers only; any other classifier fails under its own name.
 # "BSD License" names no variant; both variants are allowed.
 CLASSIFIERS = {
