@@ -95,7 +95,7 @@ def license_of(dist):
     found = [
         c.rsplit(" :: ", 1)[1]
         for c in dist.metadata.get_all("Classifier") or ()
-        if c.startswith(LICENSE_CLASSIFIER)
+        if c.startswith(LICENSE_CLASSIFIER) and c != "License :: OSI Approved"
     ]
     if found:
         # An unknown classifier becomes a LicenseRef, which never passes.

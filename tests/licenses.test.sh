@@ -43,6 +43,8 @@ check "malformed expression fails" fails_on 'a 1:'
 
 proj; dist a 1 'Classifier: License :: OSI Approved :: MIT License'
 check "classifier fallback" passes
+proj; dist a 1 'License: MIT' 'Classifier: License :: OSI Approved'
+check "bare OSI Approved classifier names no license" passes
 proj; dist a 1 'Classifier: License :: OSI Approved :: MIT License' 'Classifier: License :: OSI Approved :: GNU General Public License v3 (GPLv3)'
 check "every classifier must be allowed" fails_on 'GNU General Public License v3 (GPLv3)'
 proj; dist a 1 'License-Expression: MIT' 'Classifier: License :: OSI Approved :: GNU General Public License v3 (GPLv3)'
