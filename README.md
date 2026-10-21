@@ -247,7 +247,7 @@ cd <dir> && uv lock
 | Tier | For | Writes |
 |---|---|---|
 | prototype | Work that starts to formalize | `lint` job: ruff defaults + RUF100, PGH004; oxlint defaults with unused directives as errors; the suppression guard; Dependabot minor/major/security groups |
-| product | Repos that face the public | prototype plus ruff E, F, W, I, B, UP; oxlint `--deny-warnings`; test jobs; pyright standard with type-ignore comments off |
+| product | Repos that face the public | prototype plus ruff E, F, W, I, B, UP; oxlint `--deny-warnings`; test jobs; pyright standard with type-ignore comments off; `licenses` job (Python) |
 
 Greybox repos get nothing. The generated files pin `check.yml` and the
 guard to the commit they were generated from. After the copy, Dependabot
@@ -267,6 +267,22 @@ entry that scans the checkout's commits: the HEAD tree in CI (depth 1),
 the full history when run locally. The job sets `prek-cache: true`, so a
 warm run skips the Go build. Design:
 `docs/specs/2026-10-19-secrets-check-design.md`.
+
+The product tier's `licenses` job (Python) runs `uv sync --locked --no-dev`,
+then `.github/scripts/licenses.py` in that venv, so it checks only what the
+project ships. Each distribution's license comes from `License-Expression`,
+then its license classifiers, then the `License` field read as SPDX.
+`AND` passes only when every part is allowed; `OR` when one side is.
+Missing or unparseable metadata fails. Allowed: MIT, MIT-0, BSD-2-Clause,
+BSD-3-Clause, 0BSD, ISC, Apache-2.0, PSF-2.0, Zlib, CC0-1.0, Unlicense,
+MIT-CMU, CNRI-Python. Anything else needs a pinned exception in the
+caller's `pyproject.toml`; an exception that no longer matches, or is not
+needed, fails:
+
+```toml
+[tool.licenses.exceptions]
+"pyside6==6.9.0" = "LGPL; the zip ships Qt as replaceable DLLs"
+```
 
 ## Versioning
 
