@@ -139,7 +139,7 @@ five labels below.
 
 | Input | Default | Meaning |
 |---|---|---|
-| `model` | `opus` | Model alias |
+| `model` | `sonnet` | Model alias |
 | `effort` | `medium` | Reasoning effort (`low`, `medium`, `high`, ...); empty = model default |
 | `max-turns` | `50` | Turn limit for one run |
 | `timeout-minutes` | `20` | Limit for the fix step and for `install` |
