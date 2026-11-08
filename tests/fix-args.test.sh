@@ -4,7 +4,7 @@
 script="$root/.github/scripts/fix-args.sh"
 export HOME=/home/runner GITHUB_WORKSPACE=/home/runner/work/r/r RUNNER_TEMP=/home/runner/work/_temp \
   RUNNER_TOOL_CACHE=/opt/hostedtoolcache
-export FIX_DIR=$RUNNER_TEMP/fix MODEL=opus MAX_TURNS=50 EFFORT=medium
+export FIX_DIR=$RUNNER_TEMP/fix MODEL=sonnet MAX_TURNS=50 EFFORT=medium
 args=()
 run() { # $1 exec (true|false), $2 test command; sets args (the parsed argument list)
   out=$(EXEC=$1 TEST_COMMAND=$2 bash "$script")
@@ -33,7 +33,7 @@ lacks() { [[ $1 != *"$2"* ]]; }
 
 run false "node --test"
 allow=$(flag --allowedTools); deny=$(flag --disallowedTools)
-check "no exec: model, effort and turn cap" test "$(flag --model) $(flag --effort) $(flag --max-turns)" = "opus medium 50"
+check "no exec: model, effort and turn cap" test "$(flag --model) $(flag --effort) $(flag --max-turns)" = "sonnet medium 50"
 check "no exec: task folder is readable" test "$(flag --add-dir)" = "$FIX_DIR/task"
 check "no exec: can edit the workspace" covers "$allow" "$GITHUB_WORKSPACE/src/a.js"
 for p in "$GITHUB_WORKSPACE/src/a.js" "$GITHUB_WORKSPACE/test/a.test.js"; do
