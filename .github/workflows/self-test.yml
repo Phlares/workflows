@@ -204,6 +204,39 @@ jobs:
           bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/914e7df21a07ef503a81201c76d2b11c789d3fca/scripts/download-actionlint.bash) 1.7.12
           ACTIONLINT=$PWD/actionlint bash tests/template.test.sh
 
+  # The gate action and the packaged command, in a throwaway repo around
+  # fixtures/gate/gate.toml. Its second check prints 99 target lines and 85
+  # result lines, so a whole-list run must fail.
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: .wf
+          persist-credentials: false
+      - run: |
+          git init -q .
+          echo /.wf/ >> .git/info/exclude
+          cp .wf/fixtures/gate/gate.toml .
+          git add gate.toml
+          git -c user.name=gate -c user.email=gate@example.invalid commit -qm fixture
+      - uses: ./.wf/.github/actions/gate
+        with:
+          checks: pass
+      - run: |
+          jq -e '.status == "pass" and .clean and .skipped == ["f4"]' .git/gate/summary.json
+          test -z "$(git status --porcelain)"
+      - id: whole
+        continue-on-error: true
+        uses: ./.wf/.github/actions/gate
+      - env:
+          OUTCOME: ${{ steps.whole.outcome }}
+        run: |
+          test "$OUTCOME" = failure
+          jq -e '.status == "fail" and (.checks | map(.count)) == [null, [99, 85]]' .git/gate/summary.json
+      - run: pipx run --spec ./.wf gate pass
+
   fix-collect:
     if: always()
     needs: [fail, fail-raw]
@@ -248,7 +281,7 @@ jobs:
   # It is the one required check on main.
   verify:
     if: always()
-    needs: [js, js-sub, setup-composite, py-zig, py-uv, prek-cache, fail-uv-drift, fail, fail-win, fail-install, fail-setup, fail-odd, timeout, fail-raw, fix-unit, fix-collect, lint, template]
+    needs: [js, js-sub, setup-composite, py-zig, py-uv, prek-cache, fail-uv-drift, fail, fail-win, fail-install, fail-setup, fail-odd, timeout, fail-raw, fix-unit, fix-collect, lint, template, gate]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -265,7 +298,8 @@ jobs:
             .fail.result == "failure" and ."fail-win".result == "failure" and
             ."fail-install".result == "failure" and ."fail-setup".result == "failure" and
             ."fail-odd".result == "failure" and .timeout.result == "failure" and
-            ."fail-raw".result == "failure" and ."fix-unit".result == "success" and .template.result == "success" and ."fix-collect".result == "success"' <<<"$NEEDS"
+            ."fail-raw".result == "failure" and ."fix-unit".result == "success" and .template.result == "success" and ."fix-collect".result == "success" and
+            .gate.result == "success"' <<<"$NEEDS"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: ci-failure-*

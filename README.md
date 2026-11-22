@@ -2,7 +2,8 @@
 
 Reusable GitHub Actions jobs: `check.yml` for checks (lint, typecheck,
 tests) and `claude-fix.yml` for one Claude fix run per issue or PR. Release,
-publish and deploy jobs stay in each repo.
+publish and deploy jobs stay in each repo. Also here: the suppression guard
+and `gate`, which runs a repo's check list the same way on a PC and in CI.
 
 ## Use
 
@@ -233,6 +234,75 @@ Dependabot's `pre-commit` updates move `rev`.
   until you move the line to the new path by hand.
   `--update` does the same and exits 0. Nothing raises a count; a new
   kept site is a hand edit with its reason.
+
+## gate
+
+One command runs a repo's checks in a fixed order, from one list, on a PC
+and in CI. It writes a summary and prints one result line.
+
+`gate.toml`, at the repo root:
+
+```toml
+[[check]]
+name = "lint"
+run = "pre-commit run --all-files"
+
+[[check]]
+name = "test"
+run = "cargo test --locked"
+count = ['^\s+(Running|Doc-tests) ', '^test result: ']
+```
+
+- `name`: letters, digits, `.`, `_` and `-`. Each name is used once.
+- `run`: a bash script, run as `bash -eo pipefail -c` from the repo root.
+  It inherits the environment and reads no input. Output and errors go to
+  one stream. On Windows, start gate from Git Bash.
+- `count`: two Python regexes. gate counts the output lines that each one
+  matches, with colour codes removed. The check fails when the two counts
+  differ or when both are 0, whatever the exit code. Example: a test run
+  prints 99 target lines and 85 result lines and exits 0; the check fails.
+- A check passes when its exit code is 0 and its pair holds. Every check
+  runs, also after a failure.
+- `gate NAME...` runs only the named checks, in list order.
+- `gate.local.toml` is an optional second list, for checks that need files
+  the repo does not hold. Its checks run after the shared list. It cannot
+  reuse a name, and git must ignore it.
+- Output goes to the `gate` folder of the git directory
+  (`git rev-parse --absolute-git-dir`), so the work tree stays clean:
+  one `<name>.log` per check and `summary.json`. The summary holds the
+  commit, whether the tree was clean at the start, and for each check its
+  list, status, exit code, counts, seconds and log name. `skipped` names
+  the checks that a part run left out.
+- The result line is the last line on stdout. Quote it; do not retype a
+  count.
+
+  ```
+  gate: PASS 2/2 checks at 1886399a1b2c clean: lint ok, test ok 99=99
+  gate: FAIL 1/2 checks at 1886399a1b2c dirty: test FAIL 99!=85
+  ```
+
+- Exit code: 0 on pass, 1 when a check fails, 2 when gate cannot run (a
+  malformed list, an unknown check name, no git repo).
+
+In CI, pin the action the same way as the workflows:
+
+```yaml
+    steps:
+      - uses: actions/checkout@<full sha>
+      - uses: Phlares/workflows/.github/actions/gate@<full sha> # v1.11.0
+        with:
+          checks: test
+```
+
+`checks` takes names separated by spaces; leave it out to run the whole
+list. The action needs git and Python 3.11 or later as `python3`;
+`ubuntu-latest` has both. Toolchains and system packages stay in the job.
+
+On a PC, with the same tag:
+
+```sh
+uvx --from git+https://github.com/Phlares/workflows@v1.11.0 gate
+```
 
 ## Template
 

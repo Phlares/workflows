@@ -1,0 +1,15 @@
+name: gate
+description: Runs the checks in the repo's gate.toml and writes the summary.
+inputs:
+  checks: { description: Check names separated by spaces; empty runs the whole list, default: "" }
+runs:
+  using: composite
+  steps:
+    # GitHub fetches this whole repo at the pinned commit, so the script is
+    # two folders up. The input reaches bash through env:, never ${{ }}.
+    - shell: bash
+      env:
+        INPUT_CHECKS: ${{ inputs.checks }}
+      run: |
+        read -ra names <<<"$INPUT_CHECKS"
+        python3 "$GITHUB_ACTION_PATH/../../scripts/gate.py" "${names[@]}"
