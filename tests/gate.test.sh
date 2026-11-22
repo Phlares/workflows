@@ -7,8 +7,8 @@ export GIT_CONFIG_GLOBAL="$tmp/gitconfig"
 printf '[user]\n\tname = t\n\temail = t@example.invalid\n[core]\n\tautocrlf = false\n[init]\n\tdefaultBranch = main\n' \
   > "$GIT_CONFIG_GLOBAL"
 nrepo=0
-repo() { # fresh git repo with one commit; cd into it; g = where gate writes
-  nrepo=$((nrepo + 1)); mkdir -p "$tmp/r$nrepo"; cd "$tmp/r$nrepo" || exit 1
+repo() { # fresh git repo with one commit; cd into it; g = where gate writes; $1 = folder name
+  nrepo=$((nrepo + 1)); mkdir -p "$tmp/${1:-r$nrepo}"; cd "$tmp/${1:-r$nrepo}" || exit 1
   git init -q . && echo x > README && git add README && git commit -qm init
   g=$PWD/.git/gate
 }
@@ -196,6 +196,12 @@ name = "a"
 run = 1'
 check "bad list: two checks with one name" bad 'two checks are named "a"' <<<"$ok
 $ok"
+check "bad list: names that differ only by case" bad 'two checks are named "Test"' <<<'[[check]]
+name = "Test"
+run = "true"
+[[check]]
+name = "test"
+run = "true"'
 check "bad list: count with one pattern" bad 'check "a": count ' <<<"$ok
 count = ['x']"
 check "bad list: count that is not patterns" bad 'check "a": count ' <<<"$ok
@@ -220,5 +226,17 @@ import shutil, gate
 shutil.which = lambda name: None
 raise SystemExit(gate.main([]))' 2>&1); rc=$?
 check "a PATH with no bash is refused" refused 'bash'
+
+out=$(PYTHONPATH="$root/.github/scripts" python3 -c '
+import sys
+sys.modules["tomllib"] = None
+import gate' 2>&1); rc=$?
+check "a Python with no tomllib is refused" refused 'Python 3.11'
+
+repo; one '"true"'; gate; printf '[[check' > gate.toml; gate
+check "a refused run leaves no earlier summary" test "$rc" -eq 2 -a ! -e "$g/summary.json"
+
+repo répo; one '"true"'; gate
+check "a repo path with a non-ASCII letter works" eq "$rc" 0
 
 finish

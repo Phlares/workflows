@@ -10,7 +10,11 @@ import sys
 import time
 from pathlib import Path
 
-import tomllib  # Python 3.11+
+try:
+    import tomllib
+except ModuleNotFoundError:
+    print("gate: needs Python 3.11 or later", file=sys.stderr)
+    raise SystemExit(2) from None
 
 LIST = "gate.toml"
 LOCAL = "gate.local.toml"
@@ -26,7 +30,7 @@ def stop(msg):
 def git(*args):
     try:
         done = subprocess.run(
-            ["git", *args], check=True, capture_output=True, text=True
+            ["git", *args], check=True, capture_output=True, encoding="utf-8"
         )
     except (OSError, subprocess.CalledProcessError) as e:
         stop(f"git {' '.join(args)}: {getattr(e, 'stderr', '') or e}".strip())
@@ -88,10 +92,11 @@ def load():
         if subprocess.run(["git", "check-ignore", "-q", LOCAL], check=False).returncode:
             stop(f"{LOCAL} is not ignored by git")
         checks += read(LOCAL)
-    names = [c["name"] for c in checks]
-    for name in names:
+    # Folded: the name is a log file name, and Windows folds file names.
+    names = [c["name"].casefold() for c in checks]
+    for check, name in zip(checks, names):
         if names.count(name) > 1:
-            stop(f'two checks are named "{name}"')
+            stop(f'two checks are named "{check["name"]}"')
     return checks
 
 
@@ -150,13 +155,16 @@ def main(argv=None):
     ).splitlines()
     os.chdir(root)
     logdir = Path(gitdir) / "gate"
+    # A run that stops early must not leave an earlier run's result behind.
+    (logdir / "summary.json").unlink(missing_ok=True)
     clean = not git("status", "--porcelain")
     checks = load()
     names = [c["name"] for c in checks]
     wanted = set(args.check) or set(names)
     if unknown := sorted(wanted - set(names)):
         stop(f"no check named {', '.join(unknown)}; the list has {', '.join(names)}")
-    # A bare name would find WSL's bash before Git's on Windows; which() follows PATH.
+    # Windows resolves a bare "bash" to System32 (WSL) before PATH; which()
+    # follows PATH, so a run from Git Bash gets Git's bash.
     bash = shutil.which("bash") or stop("bash is not on PATH")
     logdir.mkdir(exist_ok=True)
     results = [run_check(c, logdir, bash) for c in checks if c["name"] in wanted]

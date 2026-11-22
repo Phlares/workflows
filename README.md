@@ -254,10 +254,12 @@ count = ['^\s+(Running|Doc-tests) ', '^test result: ']
 ```
 
 - `name`: a letter or digit, then letters, digits, `.`, `_` and `-`. Each
-  name is used once.
+  name is used once; `Test` and `test` count as one name.
 - `run`: a bash script, run as `bash -eo pipefail -c` from the repo root.
   It inherits the environment and reads no input. Output and errors go to
-  one stream. On Windows, start gate from Git Bash.
+  one stream. gate waits until that stream closes, so a check must not
+  leave a background process that holds it. On Windows, start gate from
+  Git Bash.
 - `count`: a pair of Python regexes. gate counts the output lines that
   each one matches, with colour codes removed. The pair fails when the two
   counts differ or when both are 0. Example: a test run prints 99 target
@@ -270,7 +272,8 @@ count = ['^\s+(Running|Doc-tests) ', '^test result: ']
   reuse a name, and git must ignore it.
 - Output goes to the `gate` folder of the git directory
   (`git rev-parse --absolute-git-dir`), so the work tree stays clean.
-  There is one `<name>.log` per check, and `summary.json`.
+  There is one `<name>.log` per check, and `summary.json`. A run that
+  exits 2 leaves no summary.
 - The summary holds the commit and whether the tree was clean at the
   start. For each check it holds the list, status, exit code, counts,
   seconds and log name. `skipped` names the checks that a part run left
