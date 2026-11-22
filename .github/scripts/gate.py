@@ -1,5 +1,6 @@
 """Run a repo's check list in order and write a summary."""
 
+import argparse
 import json
 import re
 import shutil
@@ -11,6 +12,7 @@ from pathlib import Path
 import tomllib  # Python 3.11+
 
 LIST = "gate.toml"
+LOCAL = "gate.local.toml"
 COLOUR = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
 
@@ -26,13 +28,34 @@ def emit(text):
     sys.stdout.buffer.flush()
 
 
-def load(root):
-    with open(root / LIST, "rb") as f:
+def stop(msg):
+    print(f"gate: {msg}", file=sys.stderr)
+    raise SystemExit(2)
+
+
+def read(root, source):
+    with open(root / source, "rb") as f:
         checks = tomllib.load(f)["check"]
     return [
-        {**c, "source": LIST, "count": [re.compile(p) for p in c.get("count", [])]}
+        {**c, "source": source, "count": [re.compile(p) for p in c.get("count", [])]}
         for c in checks
     ]
+
+
+def load(root):
+    checks = read(root, LIST)
+    if (root / LOCAL).exists():
+        # Exit 1 covers a tracked file too: git ignores only untracked paths.
+        if subprocess.run(
+            ["git", "check-ignore", "-q", LOCAL], check=False, cwd=root
+        ).returncode:
+            stop(f"{LOCAL} is not ignored by git")
+        checks += read(root, LOCAL)
+    names = [c["name"] for c in checks]
+    for name in names:
+        if names.count(name) > 1:
+            stop(f'two checks are named "{name}"')
+    return checks
 
 
 def run_check(check, root, logdir, bash):
@@ -79,16 +102,23 @@ def fragment(result):
     return text
 
 
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser(prog="gate", description=__doc__)
+    parser.add_argument("check", nargs="*", help="run only these checks")
+    args = parser.parse_args(argv)
     root = Path(git("rev-parse", "--show-toplevel"))
     logdir = Path(git("rev-parse", "--absolute-git-dir")) / "gate"
     commit = git("rev-parse", "HEAD")
     clean = not git("status", "--porcelain")
     checks = load(root)
+    names = [c["name"] for c in checks]
+    wanted = set(args.check) or set(names)
+    if unknown := sorted(wanted - set(names)):
+        stop(f"no check named {', '.join(unknown)}; the list has {', '.join(names)}")
     # A bare name would find WSL's bash before Git's on Windows; which() follows PATH.
     bash = shutil.which("bash")
     logdir.mkdir(exist_ok=True)
-    results = [run_check(c, root, logdir, bash) for c in checks]
+    results = [run_check(c, root, logdir, bash) for c in checks if c["name"] in wanted]
     passed = all(r["status"] == "pass" for r in results)
     line = "gate: {} {}/{} checks at {} {}: {}".format(
         "PASS" if passed else "FAIL",
@@ -105,7 +135,7 @@ def main():
         "status": "pass" if passed else "fail",
         "line": line,
         "checks": results,
-        "skipped": [],
+        "skipped": [n for n in names if n not in wanted],
     }
     (logdir / "summary.json").write_text(
         json.dumps(summary, indent=2) + "\n", encoding="utf-8", newline="\n"

@@ -80,11 +80,11 @@ check "a check reading stdin gets end of file" test "$rc" -eq 0 -a ! -s "$(gdir)
 
 pair() { printf '[[check]]\nname = "a"\nrun = %s\ncount = %s\n' "$1" "$2" | list; } # TOML values
 
-repo; cp "$root/fixtures/gate/gate.toml" . && git add gate.toml && git commit -qm list; gate
+repo; cp "$root/fixtures/gate/gate.toml" . && git add gate.toml && git commit -qm list; gate f4
 check "99 target lines and 85 result lines fail the pair" \
-  ends 1 "gate: FAIL 2/2 checks at $(sha) clean: pass ok, f4 FAIL 99!=85"
+  ends 1 "gate: FAIL 1/2 checks at $(sha) clean: f4 FAIL 99!=85"
 check "the summary records both counts" \
-  sj '.checks[1] | .count == [99, 85] and .exit == 0 and .status == "fail"'
+  sj '.skipped == ["pass"] and (.checks[0] | .count == [99, 85] and .exit == 0 and .status == "fail")'
 
 repo; pair '"echo x; echo y; echo x; echo y; echo x; echo y"' '["^x$", "^y$"]'; gate
 check "equal counts pass" ends 0 "gate: PASS 1/1 checks at $(sha) clean: a ok 3=3"
@@ -115,5 +115,51 @@ EOF
 gate
 check "bytes that are not UTF-8 do not stop the run" eq "$rc" 0
 check "the log keeps the raw bytes" eq "$(od -An -tx1 -N1 "$(gdir)/gate/a.log" | tr -d ' ')" ff
+
+refused() { # $1 text the message must hold; exit 2 and nothing ran
+  [ "$rc" -eq 2 ] && [ ! -e "$(gdir)/gate" ] && grep -qF -- "$1" <<<"$out" && return 0
+  printf '     rc=%s\n     %s\n' "$rc" "$out"; return 1
+}
+
+repo; list <<'EOF'
+[[check]]
+name = "a"
+run = "true"
+
+[[check]]
+name = "b"
+run = "true"
+
+[[check]]
+name = "c"
+run = "true"
+EOF
+gate c a
+check "named checks run alone, in list order" \
+  ends 0 "gate: PASS 2/3 checks at $(sha) clean: a ok, c ok"
+check "the summary names the checks that ran and the rest" \
+  sj '(.checks | map(.name)) == ["a", "c"] and .skipped == ["b"]'
+check "a skipped check writes no log" test ! -e "$(gdir)/gate/b.log"
+
+repo; one '"true"'; gate a nope
+check "an unknown name is refused before anything runs" refused nope
+
+local_list() { printf '[[check]]\nname = "%s"\nrun = "true"\n' "$1" > gate.local.toml; }
+ignoring() { echo gate.local.toml > .gitignore; git add .gitignore; }
+
+repo; ignoring; one '"true"'; local_list z; gate
+check "the local list is added after the shared list" \
+  ends 0 "gate: PASS 2/2 checks at $(sha) clean: a ok, z ok"
+check "the summary names the list of each check" \
+  sj '.clean and (.checks | map(.source)) == ["gate.toml", "gate.local.toml"]'
+
+repo; ignoring; one '"true"'; local_list a; gate
+check "a local check cannot replace a shared check" refused '"a"'
+
+repo; one '"true"'; local_list z; gate
+check "a local list that git does not ignore is refused" refused gate.local.toml
+
+repo; one '"true"'; local_list z; git add gate.local.toml; git commit -qm local; ignoring; gate
+check "a tracked local list is refused" refused gate.local.toml
 
 finish
