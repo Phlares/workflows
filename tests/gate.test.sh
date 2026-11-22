@@ -31,9 +31,10 @@ EOF
 gate
 check "a passing list exits 0 with the result line" \
   ends 0 "gate: PASS 2/2 checks at $(sha) clean: a ok, b ok"
-check "the summary records the commit, the tree and each check" \
-  sj --arg c "$(git rev-parse HEAD)" --arg l "$(line)" '
-    .schema == 1 and .commit == $c and .clean == true and .status == "pass" and .line == $l and
+check "the summary records the commit and the result line" \
+  eq "$(jq -r '.commit, .line' "$(gdir)/gate/summary.json" | tr -d '\r')" "$(git rev-parse HEAD; line)"
+check "the summary records the tree and each check" \
+  sj '.schema == 1 and .clean == true and .status == "pass" and
     .skipped == [] and (.checks | map(.name)) == ["a", "b"] and
     (.checks[0] | .source == "gate.toml" and .status == "pass" and .exit == 0 and
       .count == null and .log == "a.log" and (.seconds | type) == "number")'
@@ -161,5 +162,53 @@ check "a local list that git does not ignore is refused" refused gate.local.toml
 
 repo; one '"true"'; local_list z; git add gate.local.toml; git commit -qm local; ignoring; gate
 check "a tracked local list is refused" refused gate.local.toml
+
+bad() { repo; list; gate; refused "$1"; } # $1 text the message must hold; stdin = gate.toml
+ok='[[check]]
+name = "a"
+run = "true"'
+check "bad list: not TOML" bad 'gate.toml: ' <<<'[[check'
+check "bad list: no checks" bad 'gate.toml: no checks' <<<''
+check "bad list: unknown top-level key" bad 'gate.toml: unknown key "checks"' <<<"$ok
+[[checks]]
+name = \"b\""
+check "bad list: unknown check key" bad 'check "a": unknown key "cout"' <<<"$ok
+cout = ['x', 'y']"
+check "bad list: check is not a table" bad 'gate.toml: no checks' <<<'check = "a"'
+check "bad list: no name" bad 'gate.toml: name ' <<<'[[check]]
+run = "true"'
+check "bad list: a name that is a path" bad 'gate.toml: name ' <<<'[[check]]
+name = "../x"
+run = "true"'
+check "bad list: no run" bad 'check "a": run ' <<<'[[check]]
+name = "a"'
+check "bad list: run is not a string" bad 'check "a": run ' <<<'[[check]]
+name = "a"
+run = 1'
+check "bad list: two checks with one name" bad 'two checks are named "a"' <<<"$ok
+$ok"
+check "bad list: count with one pattern" bad 'check "a": count ' <<<"$ok
+count = ['x']"
+check "bad list: count that is not patterns" bad 'check "a": count ' <<<"$ok
+count = [1, 2]"
+check "bad list: count with a bad pattern" bad 'check "a": count ' <<<"$ok
+count = ['(', 'y']"
+
+repo; gate
+check "no gate.toml is refused" refused 'gate.toml'
+
+mkdir "$tmp/plain"; cd "$tmp/plain" || exit 1
+out=$(GIT_CEILING_DIRECTORIES="$tmp" python3 "$script" 2>&1); rc=$?
+check "a folder outside git is refused" test "$rc" -eq 2 -a "${out#gate: git }" != "$out"
+
+mkdir "$tmp/unborn"; cd "$tmp/unborn" || exit 1; git init -q .; printf '%s\n' "$ok" > gate.toml; gate
+check "a repo with no commit is refused" refused 'gate: git rev-parse HEAD'
+
+repo; one '"true"'
+out=$(PYTHONPATH="$root/.github/scripts" python3 -c '
+import shutil, gate
+shutil.which = lambda name: None
+raise SystemExit(gate.main([]))' 2>&1); rc=$?
+check "a PATH with no bash is refused" refused 'bash'
 
 finish

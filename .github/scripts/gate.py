@@ -13,13 +13,23 @@ import tomllib  # Python 3.11+
 
 LIST = "gate.toml"
 LOCAL = "gate.local.toml"
+NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 COLOUR = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
 
+def stop(msg):
+    print(f"gate: {msg}", file=sys.stderr)
+    raise SystemExit(2)
+
+
 def git(*args):
-    return subprocess.run(
-        ["git", *args], check=True, capture_output=True, text=True
-    ).stdout.strip()
+    try:
+        done = subprocess.run(
+            ["git", *args], check=True, capture_output=True, text=True
+        )
+    except (OSError, subprocess.CalledProcessError) as e:
+        stop(f"git {' '.join(args)}: {getattr(e, 'stderr', '') or e}".strip())
+    return done.stdout.strip()
 
 
 def emit(text):
@@ -28,18 +38,46 @@ def emit(text):
     sys.stdout.buffer.flush()
 
 
-def stop(msg):
-    print(f"gate: {msg}", file=sys.stderr)
-    raise SystemExit(2)
+def only(keys, found, where):
+    if extra := sorted(set(found) - keys):
+        stop(f'{where}: unknown key "{extra[0]}"')
+
+
+def parse(check, source):
+    name = check.get("name")
+    if not (isinstance(name, str) and NAME.fullmatch(name)):
+        stop(f"{source}: name {name!r} does not match {NAME.pattern}")
+    where = f'{source}: check "{name}"'
+    only({"name", "run", "count"}, check, where)
+    if not isinstance(check.get("run"), str):
+        stop(f"{where}: run must be a string")
+    pair = check.get("count", [])
+    if not (
+        isinstance(pair, list)
+        and len(pair) in (0, 2)
+        and all(isinstance(p, str) for p in pair)
+    ):
+        stop(f"{where}: count must be two patterns")
+    try:
+        patterns = [re.compile(p) for p in pair]
+    except re.error as e:
+        stop(f"{where}: count pattern: {e}")
+    return {"name": name, "run": check["run"], "count": patterns, "source": source}
 
 
 def read(root, source):
-    with open(root / source, "rb") as f:
-        checks = tomllib.load(f)["check"]
-    return [
-        {**c, "source": source, "count": [re.compile(p) for p in c.get("count", [])]}
-        for c in checks
-    ]
+    try:
+        with open(root / source, "rb") as f:
+            data = tomllib.load(f)
+    except (OSError, tomllib.TOMLDecodeError) as e:
+        stop(f"{source}: {e}")
+    only({"check"}, data, source)
+    checks = data.get("check")
+    if not (
+        isinstance(checks, list) and checks and all(isinstance(c, dict) for c in checks)
+    ):
+        stop(f"{source}: no checks")
+    return [parse(c, source) for c in checks]
 
 
 def load(root):
@@ -116,7 +154,7 @@ def main(argv=None):
     if unknown := sorted(wanted - set(names)):
         stop(f"no check named {', '.join(unknown)}; the list has {', '.join(names)}")
     # A bare name would find WSL's bash before Git's on Windows; which() follows PATH.
-    bash = shutil.which("bash")
+    bash = shutil.which("bash") or stop("bash is not on PATH")
     logdir.mkdir(exist_ok=True)
     results = [run_check(c, root, logdir, bash) for c in checks if c["name"] in wanted]
     passed = all(r["status"] == "pass" for r in results)
