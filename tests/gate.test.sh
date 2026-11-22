@@ -78,4 +78,42 @@ check "a linked worktree keeps its own summary" test -f "$(gdir)/gate/summary.js
 repo; one '"cat"'; out=$(echo leak | python3 "$script" 2>&1); rc=$?
 check "a check reading stdin gets end of file" test "$rc" -eq 0 -a ! -s "$(gdir)/gate/a.log"
 
+pair() { printf '[[check]]\nname = "a"\nrun = %s\ncount = %s\n' "$1" "$2" | list; } # TOML values
+
+repo; cp "$root/fixtures/gate/gate.toml" . && git add gate.toml && git commit -qm list; gate
+check "99 target lines and 85 result lines fail the pair" \
+  ends 1 "gate: FAIL 2/2 checks at $(sha) clean: pass ok, f4 FAIL 99!=85"
+check "the summary records both counts" \
+  sj '.checks[1] | .count == [99, 85] and .exit == 0 and .status == "fail"'
+
+repo; pair '"echo x; echo y; echo x; echo y; echo x; echo y"' '["^x$", "^y$"]'; gate
+check "equal counts pass" ends 0 "gate: PASS 1/1 checks at $(sha) clean: a ok 3=3"
+
+repo; pair '"echo z"' '["^x$", "^y$"]'; gate
+check "a pair that matches nothing fails" ends 1 "gate: FAIL 1/1 checks at $(sha) clean: a FAIL 0=0"
+
+repo; pair '"echo x; echo y; exit 1"' '["^x$", "^y$"]'; gate
+check "a non-zero exit fails with equal counts" \
+  ends 1 "gate: FAIL 1/1 checks at $(sha) clean: a FAIL exit 1 1=1"
+
+repo; list <<'EOF'
+[[check]]
+name = "a"
+run = '''printf '\033[32m     Running x\033[0m\r\ndone\r\n' '''
+count = ['^\s+Running x$', '^done$']
+EOF
+gate
+check "colour codes and CRLF do not hide a match" \
+  ends 0 "gate: PASS 1/1 checks at $(sha) clean: a ok 1=1"
+
+repo; list <<'EOF'
+[[check]]
+name = "a"
+run = '''printf '\377\nx\ny\n' '''
+count = ['^x$', '^y$']
+EOF
+gate
+check "bytes that are not UTF-8 do not stop the run" eq "$rc" 0
+check "the log keeps the raw bytes" eq "$(od -An -tx1 -N1 "$(gdir)/gate/a.log" | tr -d ' ')" ff
+
 finish

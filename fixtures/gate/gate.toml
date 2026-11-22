@@ -1,0 +1,13 @@
+# Used by tests/gate.test.sh and the gate job in self-test.yml.
+[[check]]
+name = "pass"
+run = "echo ok"
+
+# 99 target lines, 85 result lines: the exit code is 0 and the pair fails.
+[[check]]
+name = "f4"
+run = '''
+for i in $(seq 99); do echo "     Running tests/t$i.rs (target/debug/deps/t$i-0000000000000000)"; done
+for i in $(seq 85); do echo "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"; done
+'''
+count = ['^\s+Running ', '^test result: ']

@@ -1,6 +1,7 @@
 """Run a repo's check list in order and write a summary."""
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -10,6 +11,7 @@ from pathlib import Path
 import tomllib  # Python 3.11+
 
 LIST = "gate.toml"
+COLOUR = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
 
 def git(*args):
@@ -26,12 +28,18 @@ def emit(text):
 
 def load(root):
     with open(root / LIST, "rb") as f:
-        return [{**c, "source": LIST} for c in tomllib.load(f)["check"]]
+        checks = tomllib.load(f)["check"]
+    return [
+        {**c, "source": LIST, "count": [re.compile(p) for p in c.get("count", [])]}
+        for c in checks
+    ]
 
 
 def run_check(check, root, logdir, bash):
     emit(f"gate: {check['name']}")
     log = f"{check['name']}.log"
+    pair = check["count"]
+    counts = [0] * len(pair)
     start = time.monotonic()
     with open(logdir / log, "wb") as f:
         proc = subprocess.Popen(
@@ -45,13 +53,17 @@ def run_check(check, root, logdir, bash):
             f.write(raw)
             sys.stdout.buffer.write(raw)
             sys.stdout.buffer.flush()
+            text = COLOUR.sub("", raw.decode(errors="replace")).rstrip("\r\n")
+            counts = [n + bool(p.search(text)) for n, p in zip(counts, pair)]
         code = proc.wait()
+    # No pair: both tests hold for the empty list. A pair: equal and not zero.
+    passed = code == 0 and len(set(counts)) <= 1 and all(counts)
     return {
         "name": check["name"],
         "source": check["source"],
-        "status": "pass" if code == 0 else "fail",
+        "status": "pass" if passed else "fail",
         "exit": code,
-        "count": None,
+        "count": counts or None,
         "seconds": round(time.monotonic() - start, 3),
         "log": log,
     }
@@ -61,6 +73,9 @@ def fragment(result):
     text = f"{result['name']} {'ok' if result['status'] == 'pass' else 'FAIL'}"
     if result["exit"]:
         text += f" exit {result['exit']}"
+    if result["count"]:
+        a, b = result["count"]
+        text += f" {a}{'=' if a == b else '!='}{b}"
     return text
 
 
