@@ -253,26 +253,28 @@ run = "cargo test --locked"
 count = ['^\s+(Running|Doc-tests) ', '^test result: ']
 ```
 
-- `name`: letters, digits, `.`, `_` and `-`. Each name is used once.
+- `name`: a letter or digit, then letters, digits, `.`, `_` and `-`. Each
+  name is used once.
 - `run`: a bash script, run as `bash -eo pipefail -c` from the repo root.
   It inherits the environment and reads no input. Output and errors go to
   one stream. On Windows, start gate from Git Bash.
-- `count`: two Python regexes. gate counts the output lines that each one
-  matches, with colour codes removed. The check fails when the two counts
-  differ or when both are 0, whatever the exit code. Example: a test run
-  prints 99 target lines and 85 result lines and exits 0; the check fails.
-- A check passes when its exit code is 0 and its pair holds. Every check
-  runs, also after a failure.
+- `count`: a pair of Python regexes. gate counts the output lines that
+  each one matches, with colour codes removed. The pair fails when the two
+  counts differ or when both are 0. Example: a test run prints 99 target
+  lines and 85 result lines and exits 0; the check fails.
+- A check passes when its exit code is 0 and its pair, if it has one, does
+  not fail. Every check runs, also after a failure.
 - `gate NAME...` runs only the named checks, in list order.
 - `gate.local.toml` is an optional second list, for checks that need files
   the repo does not hold. Its checks run after the shared list. It cannot
   reuse a name, and git must ignore it.
 - Output goes to the `gate` folder of the git directory
-  (`git rev-parse --absolute-git-dir`), so the work tree stays clean:
-  one `<name>.log` per check and `summary.json`. The summary holds the
-  commit, whether the tree was clean at the start, and for each check its
-  list, status, exit code, counts, seconds and log name. `skipped` names
-  the checks that a part run left out.
+  (`git rev-parse --absolute-git-dir`), so the work tree stays clean.
+  There is one `<name>.log` per check, and `summary.json`.
+- The summary holds the commit and whether the tree was clean at the
+  start. For each check it holds the list, status, exit code, counts,
+  seconds and log name. `skipped` names the checks that a part run left
+  out.
 - The result line is the last line on stdout. Quote it; do not retype a
   count.
 
@@ -284,6 +286,8 @@ count = ['^\s+(Running|Doc-tests) ', '^test result: ']
 - Exit code: 0 on pass, 1 when a check fails, 2 when gate cannot run (a
   malformed list, an unknown check name, no git repo).
 
+gate needs git, bash and Python 3.11 or later.
+
 In CI, pin the action the same way as the workflows:
 
 ```yaml
@@ -294,9 +298,9 @@ In CI, pin the action the same way as the workflows:
           checks: test
 ```
 
-`checks` takes names separated by spaces; leave it out to run the whole
-list. The action needs git and Python 3.11 or later as `python3`;
-`ubuntu-latest` has both. Toolchains and system packages stay in the job.
+`checks` takes names separated by spaces or new lines; leave it out to run
+the whole list. The action runs `python3`, which is 3.12 on the
+`ubuntu-24.04` runner. Toolchains and system packages stay in the job.
 
 On a PC, with the same tag:
 

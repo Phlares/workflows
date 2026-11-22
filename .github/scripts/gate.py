@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -65,9 +66,9 @@ def parse(check, source):
     return {"name": name, "run": check["run"], "count": patterns, "source": source}
 
 
-def read(root, source):
+def read(source):
     try:
-        with open(root / source, "rb") as f:
+        with open(source, "rb") as f:
             data = tomllib.load(f)
     except (OSError, tomllib.TOMLDecodeError) as e:
         stop(f"{source}: {e}")
@@ -80,15 +81,13 @@ def read(root, source):
     return [parse(c, source) for c in checks]
 
 
-def load(root):
-    checks = read(root, LIST)
-    if (root / LOCAL).exists():
+def load():
+    checks = read(LIST)
+    if os.path.exists(LOCAL):
         # Exit 1 covers a tracked file too: git ignores only untracked paths.
-        if subprocess.run(
-            ["git", "check-ignore", "-q", LOCAL], check=False, cwd=root
-        ).returncode:
+        if subprocess.run(["git", "check-ignore", "-q", LOCAL], check=False).returncode:
             stop(f"{LOCAL} is not ignored by git")
-        checks += read(root, LOCAL)
+        checks += read(LOCAL)
     names = [c["name"] for c in checks]
     for name in names:
         if names.count(name) > 1:
@@ -96,7 +95,7 @@ def load(root):
     return checks
 
 
-def run_check(check, root, logdir, bash):
+def run_check(check, logdir, bash):
     emit(f"gate: {check['name']}")
     log = f"{check['name']}.log"
     pair = check["count"]
@@ -105,11 +104,11 @@ def run_check(check, root, logdir, bash):
     with open(logdir / log, "wb") as f:
         proc = subprocess.Popen(
             [bash, "-eo", "pipefail", "-c", check["run"]],
-            cwd=root,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
         )
+        raw = b"\n"
         for raw in proc.stdout:
             f.write(raw)
             sys.stdout.buffer.write(raw)
@@ -117,6 +116,8 @@ def run_check(check, root, logdir, bash):
             text = COLOUR.sub("", raw.decode(errors="replace")).rstrip("\r\n")
             counts = [n + bool(p.search(text)) for n, p in zip(counts, pair)]
         code = proc.wait()
+    if not raw.endswith(b"\n"):
+        emit("")
     # No pair: both tests hold for the empty list. A pair: equal and not zero.
     passed = code == 0 and len(set(counts)) <= 1 and all(counts)
     return {
@@ -144,11 +145,13 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog="gate", description=__doc__)
     parser.add_argument("check", nargs="*", help="run only these checks")
     args = parser.parse_args(argv)
-    root = Path(git("rev-parse", "--show-toplevel"))
-    logdir = Path(git("rev-parse", "--absolute-git-dir")) / "gate"
-    commit = git("rev-parse", "HEAD")
+    root, gitdir, commit = git(
+        "rev-parse", "--show-toplevel", "--absolute-git-dir", "HEAD"
+    ).splitlines()
+    os.chdir(root)
+    logdir = Path(gitdir) / "gate"
     clean = not git("status", "--porcelain")
-    checks = load(root)
+    checks = load()
     names = [c["name"] for c in checks]
     wanted = set(args.check) or set(names)
     if unknown := sorted(wanted - set(names)):
@@ -156,7 +159,7 @@ def main(argv=None):
     # A bare name would find WSL's bash before Git's on Windows; which() follows PATH.
     bash = shutil.which("bash") or stop("bash is not on PATH")
     logdir.mkdir(exist_ok=True)
-    results = [run_check(c, root, logdir, bash) for c in checks if c["name"] in wanted]
+    results = [run_check(c, logdir, bash) for c in checks if c["name"] in wanted]
     passed = all(r["status"] == "pass" for r in results)
     line = "gate: {} {}/{} checks at {} {}: {}".format(
         "PASS" if passed else "FAIL",

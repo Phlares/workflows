@@ -227,9 +227,14 @@ jobs:
       - run: |
           jq -e '.status == "pass" and .clean and .skipped == ["f4"]' .git/gate/summary.json
           test -z "$(git status --porcelain)"
+      # Names on two lines: reading one line only would run `pass` and succeed.
       - id: whole
         continue-on-error: true
         uses: ./.wf/.github/actions/gate
+        with:
+          checks: |
+            pass
+            f4
       - env:
           OUTCOME: ${{ steps.whole.outcome }}
         run: |

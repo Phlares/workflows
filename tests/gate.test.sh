@@ -2,22 +2,30 @@
 # shellcheck source=lib.sh
 . "$(dirname "$0")/lib.sh"
 script="$root/.github/scripts/gate.py"
+# One git config for every repo here, and none of the machine's own.
+export GIT_CONFIG_GLOBAL="$tmp/gitconfig"
+printf '[user]\n\tname = t\n\temail = t@example.invalid\n[core]\n\tautocrlf = false\n[init]\n\tdefaultBranch = main\n' \
+  > "$GIT_CONFIG_GLOBAL"
 nrepo=0
-repo() { # fresh git repo with one commit; cd into it
+repo() { # fresh git repo with one commit; cd into it; g = where gate writes
   nrepo=$((nrepo + 1)); mkdir -p "$tmp/r$nrepo"; cd "$tmp/r$nrepo" || exit 1
-  git init -q . && git config core.autocrlf false
-  git config user.name t && git config user.email t@example.invalid
-  echo x > README && git add README && git commit -qm init
+  git init -q . && echo x > README && git add README && git commit -qm init
+  g=$PWD/.git/gate
 }
 list() { cat > gate.toml && git add gate.toml && git commit -qm list; } # gate.toml from stdin
-one() { printf '[[check]]\nname = "a"\nrun = %s\n' "$1" | list; } # $1 = TOML string
+one() { # one check "a"; $1 run, $2 count: TOML values
+  printf '[[check]]\nname = "a"\nrun = %s\n%s\n' "$1" "${2:+count = $2}" | list
+}
 gate() { out=$(python3 "$script" "$@" 2>&1); rc=$?; }
 line() { printf '%s\n' "$out" | tail -n 1; }
-gdir() { git rev-parse --absolute-git-dir; }
-sj() { jq -e "$@" "$(gdir)/gate/summary.json" > /dev/null; }
+sj() { jq -e "$@" "$g/summary.json" > /dev/null; }
 sha() { git rev-parse HEAD | cut -c1-12; }
 eq() { [ "$1" = "$2" ] || { printf '     got:  %s\n     want: %s\n' "$1" "$2"; return 1; }; }
 ends() { eq "$rc" "$1" && eq "$(line)" "$2"; } # $1 exit code, $2 result line
+refused() { # $1 text the message must hold; exit 2 and nothing ran
+  [ "$rc" -eq 2 ] && [ ! -e "$g" ] && grep -qF -- "$1" <<<"$out" && return 0
+  printf '     rc=%s\n     %s\n' "$rc" "$out"; return 1
+}
 
 repo; list <<'EOF'
 [[check]]
@@ -32,7 +40,7 @@ gate
 check "a passing list exits 0 with the result line" \
   ends 0 "gate: PASS 2/2 checks at $(sha) clean: a ok, b ok"
 check "the summary records the commit and the result line" \
-  eq "$(jq -r '.commit, .line' "$(gdir)/gate/summary.json" | tr -d '\r')" "$(git rev-parse HEAD; line)"
+  eq "$(jq -r '.commit, .line' "$g/summary.json" | tr -d '\r')" "$(git rev-parse HEAD; line)"
 check "the summary records the tree and each check" \
   sj '.schema == 1 and .clean == true and .status == "pass" and
     .skipped == [] and (.checks | map(.name)) == ["a", "b"] and
@@ -51,7 +59,7 @@ run = "echo two"
 EOF
 gate
 check "a failing check exits 1" ends 1 "gate: FAIL 2/2 checks at $(sha) clean: a FAIL exit 3, b ok"
-check "checks after a failure still run" eq "$(cat "$(gdir)/gate/b.log")" two
+check "checks after a failure still run" eq "$(cat "$g/b.log")" two
 check "the summary records the failure" \
   sj '.status == "fail" and (.checks | map(.status)) == ["fail", "pass"] and .checks[0].exit == 3'
 
@@ -59,7 +67,12 @@ repo; one '"false | true"'; gate
 check "run is bash with pipefail" eq "$rc" 1
 
 repo; one '"echo a; echo b >&2; echo c"'; gate
-check "output and errors share one ordered log" eq "$(cat "$(gdir)/gate/a.log")" $'a\nb\nc'
+check "output and errors share one ordered log" eq "$(cat "$g/a.log")" $'a\nb\nc'
+
+repo; one '"printf x"'; gate
+check "output with no final newline keeps the result line whole" \
+  ends 0 "gate: PASS 1/1 checks at $(sha) clean: a ok"
+check "the log gains no newline" eq "$(od -An -c "$g/a.log" | tr -d ' ')" x
 
 repo; one '"true"'; echo y >> README; gate
 check "a changed tracked file is recorded as dirty" \
@@ -72,28 +85,27 @@ check "an untracked file is recorded as dirty" sj '.clean == false'
 repo; one '"test -f gate.toml"'; mkdir sub; cd sub || exit 1; gate
 check "a run from a subfolder uses the repo root" eq "$rc" 0
 
-repo; one '"true"'; main=$PWD
+repo; one '"true"'
 git worktree add -q "$tmp/w$nrepo" -b "w$nrepo"; cd "$tmp/w$nrepo" || exit 1; gate
-check "a linked worktree keeps its own summary" test -f "$(gdir)/gate/summary.json" -a ! -e "$main/.git/gate"
+check "a linked worktree keeps its own summary" \
+  test -f "$(git rev-parse --absolute-git-dir)/gate/summary.json" -a ! -e "$g"
 
-repo; one '"cat"'; out=$(echo leak | python3 "$script" 2>&1); rc=$?
-check "a check reading stdin gets end of file" test "$rc" -eq 0 -a ! -s "$(gdir)/gate/a.log"
+repo; one '"cat"'; gate <<<leak
+check "a check reading stdin gets end of file" test "$rc" -eq 0 -a ! -s "$g/a.log"
 
-pair() { printf '[[check]]\nname = "a"\nrun = %s\ncount = %s\n' "$1" "$2" | list; } # TOML values
-
-repo; cp "$root/fixtures/gate/gate.toml" . && git add gate.toml && git commit -qm list; gate f4
+repo; list < "$root/fixtures/gate/gate.toml"; gate f4
 check "99 target lines and 85 result lines fail the pair" \
   ends 1 "gate: FAIL 1/2 checks at $(sha) clean: f4 FAIL 99!=85"
 check "the summary records both counts" \
   sj '.skipped == ["pass"] and (.checks[0] | .count == [99, 85] and .exit == 0 and .status == "fail")'
 
-repo; pair '"echo x; echo y; echo x; echo y; echo x; echo y"' '["^x$", "^y$"]'; gate
+repo; one '"echo x; echo y; echo x; echo y; echo x; echo y"' '["^x$", "^y$"]'; gate
 check "equal counts pass" ends 0 "gate: PASS 1/1 checks at $(sha) clean: a ok 3=3"
 
-repo; pair '"echo z"' '["^x$", "^y$"]'; gate
+repo; one '"echo z"' '["^x$", "^y$"]'; gate
 check "a pair that matches nothing fails" ends 1 "gate: FAIL 1/1 checks at $(sha) clean: a FAIL 0=0"
 
-repo; pair '"echo x; echo y; exit 1"' '["^x$", "^y$"]'; gate
+repo; one '"echo x; echo y; exit 1"' '["^x$", "^y$"]'; gate
 check "a non-zero exit fails with equal counts" \
   ends 1 "gate: FAIL 1/1 checks at $(sha) clean: a FAIL exit 1 1=1"
 
@@ -115,12 +127,7 @@ count = ['^x$', '^y$']
 EOF
 gate
 check "bytes that are not UTF-8 do not stop the run" eq "$rc" 0
-check "the log keeps the raw bytes" eq "$(od -An -tx1 -N1 "$(gdir)/gate/a.log" | tr -d ' ')" ff
-
-refused() { # $1 text the message must hold; exit 2 and nothing ran
-  [ "$rc" -eq 2 ] && [ ! -e "$(gdir)/gate" ] && grep -qF -- "$1" <<<"$out" && return 0
-  printf '     rc=%s\n     %s\n' "$rc" "$out"; return 1
-}
+check "the log keeps the raw bytes" eq "$(od -An -tx1 -N1 "$g/a.log" | tr -d ' ')" ff
 
 repo; list <<'EOF'
 [[check]]
@@ -140,7 +147,7 @@ check "named checks run alone, in list order" \
   ends 0 "gate: PASS 2/3 checks at $(sha) clean: a ok, c ok"
 check "the summary names the checks that ran and the rest" \
   sj '(.checks | map(.name)) == ["a", "c"] and .skipped == ["b"]'
-check "a skipped check writes no log" test ! -e "$(gdir)/gate/b.log"
+check "a skipped check writes no log" test ! -e "$g/b.log"
 
 repo; one '"true"'; gate a nope
 check "an unknown name is refused before anything runs" refused nope
@@ -163,7 +170,9 @@ check "a local list that git does not ignore is refused" refused gate.local.toml
 repo; one '"true"'; local_list z; git add gate.local.toml; git commit -qm local; ignoring; gate
 check "a tracked local list is refused" refused gate.local.toml
 
-bad() { repo; list; gate; refused "$1"; } # $1 text the message must hold; stdin = gate.toml
+# gate refuses a bad list before it writes, so one repo serves every case.
+repo
+bad() { cat > gate.toml; gate; refused "$1"; } # $1 text the message must hold; stdin = gate.toml
 ok='[[check]]
 name = "a"
 run = "true"'
@@ -197,12 +206,13 @@ count = ['(', 'y']"
 repo; gate
 check "no gate.toml is refused" refused 'gate.toml'
 
-mkdir "$tmp/plain"; cd "$tmp/plain" || exit 1
-out=$(GIT_CEILING_DIRECTORIES="$tmp" python3 "$script" 2>&1); rc=$?
-check "a folder outside git is refused" test "$rc" -eq 2 -a "${out#gate: git }" != "$out"
+mkdir "$tmp/plain"; cd "$tmp/plain" || exit 1; g=$PWD/.git/gate
+GIT_CEILING_DIRECTORIES="$tmp" gate
+check "a folder outside git is refused" refused 'gate: git rev-parse'
 
-mkdir "$tmp/unborn"; cd "$tmp/unborn" || exit 1; git init -q .; printf '%s\n' "$ok" > gate.toml; gate
-check "a repo with no commit is refused" refused 'gate: git rev-parse HEAD'
+mkdir "$tmp/unborn"; cd "$tmp/unborn" || exit 1; g=$PWD/.git/gate
+git init -q .; printf '%s\n' "$ok" > gate.toml; gate
+check "a repo with no commit is refused" refused 'gate: git rev-parse'
 
 repo; one '"true"'
 out=$(PYTHONPATH="$root/.github/scripts" python3 -c '
