@@ -1,5 +1,6 @@
-# Packages .github/scripts/suppressions.py for the prek hook in
-# .pre-commit-hooks.yaml. Nothing else in this repo is Python.
+# Packages two scripts from .github/scripts: suppressions.py for the prek
+# hook in .pre-commit-hooks.yaml, and gate.py as the gate command.
+# gate needs Python 3.11; the hook keeps 3.10.
 [build-system]
 requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
@@ -8,8 +9,8 @@ build-backend = "setuptools.build_meta"
 name = "phlares-suppressions"
 version = "1.10.0"
 requires-python = ">=3.10"
-scripts = { suppressions = "suppressions:main" }
+scripts = { suppressions = "suppressions:main", gate = "gate:main" }
 
 [tool.setuptools]
-py-modules = ["suppressions"]
+py-modules = ["suppressions", "gate"]
 package-dir = { "" = ".github/scripts" }
